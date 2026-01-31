@@ -45,6 +45,18 @@ export interface MatchPlayer {
     hasActedThisTurn: boolean;
 }
 
+export interface CommandResult {
+    success: boolean;
+    newState?: MatchState;
+    error?: string;
+}
+
+export interface Command {
+    type: string;
+    payload: any;
+    execute(state: MatchState): CommandResult;
+}
+
 export interface MatchState {
     turn: number;
     phase: 'PLANNING' | 'EXECUTION' | 'RESOLUTION';
@@ -52,6 +64,8 @@ export interface MatchState {
 
     players: MatchPlayer[];
     ballPosition: Vector2;
+
+    plannedCommands: Command[];
 
     gridSize: { width: number; height: number };
 }

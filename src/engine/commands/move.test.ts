@@ -9,6 +9,7 @@ const createDummyState = (): MatchState => ({
     activeTeam: 'HOME',
     gridSize: { width: 10, height: 10 },
     ballPosition: { x: 5, y: 5 },
+    plannedCommands: [],
     players: [
         {
             id: 'p1',

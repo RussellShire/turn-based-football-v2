@@ -4,11 +4,22 @@ import { useGameStore } from '../store';
 import { GRID_WIDTH } from '../engine/grid';
 import { DraggablePlayer } from './DraggablePlayer';
 import { DroppableTile } from './DroppableTile';
+import { GhostPlayer } from './GhostPlayer';
 import { MoveCommand } from '../engine/commands/move';
 import type { Vector2 } from '../engine/types';
 
 export const Pitch: React.FC = () => {
-    const { players, ballPosition, gridSize, dispatch } = useGameStore();
+    const { players, ballPosition, gridSize, dispatch, plannedCommands } = useGameStore();
+
+    // Extract planned moves
+    const plannedMoves = React.useMemo(() => {
+        return (plannedCommands || [])
+            .filter(c => c.type === 'MOVE')
+            .map(c => ({
+                playerId: c.payload.playerId,
+                to: c.payload.to as Vector2
+            }));
+    }, [plannedCommands]);
 
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
@@ -50,32 +61,106 @@ export const Pitch: React.FC = () => {
         <DndContext onDragEnd={handleDragEnd}>
             <div className="relative p-4 bg-green-800 rounded-lg shadow-xl overflow-hidden select-none">
 
-                {/* Grid Layer */}
-                <div
-                    className="grid gap-px bg-green-900/30"
-                    style={{
-                        gridTemplateColumns: `repeat(${GRID_WIDTH}, minmax(0, 1fr))`,
-                        width: 'fit-content',
-                    }}
-                >
-                    {cells.map((cell) => {
-                        const playerHere = getPlayerAt(cell.x, cell.y);
-                        return (
-                            <DroppableTile key={`${cell.x}-${cell.y}`} pos={cell}>
-                                {playerHere && (
-                                    <div className="absolute inset-0 z-20">
-                                        <DraggablePlayer player={playerHere} />
-                                    </div>
-                                )}
-                                {/* Ball Rendering (Simple overlay if ball is here) */}
-                                {ballPosition.x === cell.x && ballPosition.y === cell.y && (
-                                    <div
-                                        className="absolute w-4 h-4 bg-white rounded-full shadow-md border border-gray-400 z-30 top-1 left-1 pointer-events-none"
-                                    />
-                                )}
-                            </DroppableTile>
-                        );
-                    })}
+                {/* HUD Overlay */}
+                <div className="absolute top-2 left-2 z-50 bg-black/60 text-white p-2 rounded backdrop-blur-sm text-xs border border-white/10 flex gap-4 items-center">
+                    <div>
+                        <span className="font-bold block text-gray-400">TURN {useGameStore(s => s.turn)}</span>
+                        <span className={useGameStore(s => s.activeTeam === 'HOME' ? 'text-red-400 font-bold' : 'text-blue-400 font-bold')}>
+                            {useGameStore(s => s.activeTeam)} TEAM
+                        </span>
+                        <span className="ml-2 text-gray-500 text-[10px] uppercase tracking-wider">{useGameStore(s => s.phase)}</span>
+                    </div>
+                    <button
+                        onClick={() => useGameStore.getState().nextPhase()}
+                        className="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 text-white rounded font-bold transition-colors"
+                    >
+                        {useGameStore(s => s.phase === 'PLANNING' ? 'END PLANNING' : 'CONTINUE')}
+                    </button>
+                </div>
+
+                {/* Grid Container for Layout */}
+                <div className="relative">
+                    {/* Arrows Overlay (Absolute over grid) */}
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" style={{ overflow: 'visible' }}>
+                        <defs>
+                            <marker id="arrowhead-home" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+                                <polygon points="0 0, 6 2, 0 4" fill="#fca5a5" />
+                            </marker>
+                            <marker id="arrowhead-away" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+                                <polygon points="0 0, 6 2, 0 4" fill="#93c5fd" />
+                            </marker>
+                        </defs>
+                        {plannedMoves.map((move, i) => {
+                            const player = players.find(p => p.id === move.playerId);
+                            if (!player) return null;
+
+                            // Calculate pixel centroids based on 40px cell + 1px gap
+                            // These constants must match the CSS Grid layout
+                            const CELL = 40;
+                            const GAP = 1;
+                            const TOTAL = CELL + GAP;
+                            const OFFSET = CELL / 2;
+
+                            const startX = player.position.x * TOTAL + OFFSET;
+                            const startY = player.position.y * TOTAL + OFFSET;
+                            const endX = move.to.x * TOTAL + OFFSET;
+                            const endY = move.to.y * TOTAL + OFFSET;
+
+                            const color = player.teamId === 'HOME' ? '#fca5a5' : '#93c5fd';
+                            const marker = player.teamId === 'HOME' ? 'url(#arrowhead-home)' : 'url(#arrowhead-away)';
+
+                            return (
+                                <line
+                                    key={`arrow-${i}`}
+                                    x1={startX} y1={startY}
+                                    x2={endX} y2={endY}
+                                    stroke={color}
+                                    strokeWidth="2"
+                                    strokeDasharray="4 2"
+                                    markerEnd={marker}
+                                    opacity="0.7"
+                                />
+                            );
+                        })}
+                    </svg>
+
+                    {/* The Grid Itself */}
+                    <div
+                        className="grid gap-px bg-green-900/30"
+                        style={{
+                            gridTemplateColumns: `repeat(${GRID_WIDTH}, minmax(0, 1fr))`,
+                            width: 'fit-content',
+                        }}
+                    >
+                        {cells.map((cell) => {
+                            const playerHere = getPlayerAt(cell.x, cell.y);
+
+                            // Check for Ghost
+                            const movesHere = plannedMoves.filter(m => m.to.x === cell.x && m.to.y === cell.y);
+
+                            return (
+                                <DroppableTile key={`${cell.x}-${cell.y}`} pos={cell}>
+                                    {/* Render Ghosts */}
+                                    {movesHere.map(m => {
+                                        const p = players.find(pl => pl.id === m.playerId);
+                                        return p ? <div key={`ghost-${m.playerId}`} className="absolute inset-0 z-10 pointer-events-none"><GhostPlayer player={p} /></div> : null;
+                                    })}
+
+                                    {playerHere && (
+                                        <div className="absolute inset-0 z-20">
+                                            <DraggablePlayer player={playerHere} />
+                                        </div>
+                                    )}
+                                    {/* Ball Rendering */}
+                                    {ballPosition.x === cell.x && ballPosition.y === cell.y && (
+                                        <div
+                                            className="absolute w-4 h-4 bg-white rounded-full shadow-md border border-gray-400 z-30 top-1 left-1 pointer-events-none"
+                                        />
+                                    )}
+                                </DroppableTile>
+                            );
+                        })}
+                    </div>
                 </div>
 
             </div>
