@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import type { MatchState, MatchPlayer, TeamId } from './engine/types';
+import type { MatchState, MatchPlayer } from './engine/types';
 import { GRID_WIDTH, GRID_HEIGHT } from './engine/grid';
-
 import { executeCommand } from './engine/processor';
-import type { Command, CommandResult } from './engine/commands';
+import type { Command, CommandResult } from './engine/types'; // Updated import path
+import { generateAIPlans } from './engine/ai';
+import { resolveTurn } from './engine/resolution';
 
 interface GameStore extends MatchState {
     // Actions
@@ -44,7 +45,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
             // In a real robust system we'd use a more generic way to identify actor.
             const newPayload = command.payload as any;
             if (newPayload.playerId) {
-                const filtered = state.plannedCommands.filter(c => (c.payload as any).playerId !== newPayload.playerId);
+                // Allow one command PER TYPE per player.
+                // e.g. One MOVE, One PASS.
+                const filtered = state.plannedCommands.filter(c =>
+                    !((c.payload as any).playerId === newPayload.playerId && c.type === command.type)
+                );
                 set({ plannedCommands: [...filtered, command] });
                 return { success: true };
             } else {
@@ -62,29 +67,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
     },
 
     nextPhase: () => set((state) => {
-        // In this simple version, "Next Phase" essentially triggers "End Turn"
-        // Cycle: Home Turn -> Away Turn -> Next Round
+        if (state.phase === 'PLANNING') {
+            // 1. Generate AI Plans (Opponent - AWAY)
+            const aiCommands = generateAIPlans(state);
 
-        const nextTeam: TeamId = state.activeTeam === 'HOME' ? 'AWAY' : 'HOME';
-        const nextTurn = nextTeam === 'HOME' ? state.turn + 1 : state.turn;
+            // 2. Combine with User Plans
+            const allCommands = [...state.plannedCommands, ...aiCommands];
 
-        // Reset player flags for the NEW active team (or all, simpler to reset all)
-        const resetPlayers = state.players.map(p => ({
-            ...p,
-            hasMovedThisTurn: false,
-            hasActedThisTurn: false,
-            // Regenerate some AP? For now reset to 100 or keep as is? 
-            // Let's assume full recovery for simple testing, or just don't touch HP yet which means stamina is persistent.
-            // Plan said "resource management", so let's keep it persistent, maybe regen a bit.
-            // Let's just reset flags for now.
-        }));
+            // 3. Resolve Turn
+            // Create a temp state with all commands to pass to resolver
+            const planningState = { ...state, plannedCommands: allCommands };
 
-        return {
-            activeTeam: nextTeam,
-            turn: nextTurn,
-            phase: 'PLANNING', // Always go back to planning start of turn
-            players: resetPlayers
-        };
+            const resolvedState = resolveTurn(planningState);
+
+            return {
+                ...resolvedState,
+                turn: state.turn + 1,
+                phase: 'PLANNING',
+                activeTeam: 'HOME',
+                plannedCommands: [],
+            };
+        }
+        return state;
     })
 }));
 

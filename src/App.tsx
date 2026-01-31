@@ -13,7 +13,8 @@ function App() {
       { id: 'h2', sourcePlayerId: 'p2', position: { x: 8, y: 5 }, facingDirection: 'E', teamId: 'HOME', currentHP: 100, modifiers: [], hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
     ];
     const away: MatchPlayer[] = [
-      { id: 'a1', sourcePlayerId: 'p3', position: { x: 18, y: 8 }, facingDirection: 'W', teamId: 'AWAY', currentHP: 100, modifiers: [], hasBall: true, hasMovedThisTurn: false, hasActedThisTurn: false },
+      { id: 'a1', sourcePlayerId: 'p3', position: { x: 18, y: 8 }, facingDirection: 'W', teamId: 'AWAY', currentHP: 100, modifiers: [], hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
+      { id: 'a2', sourcePlayerId: 'p4', position: { x: 18, y: 5 }, facingDirection: 'W', teamId: 'AWAY', currentHP: 100, modifiers: [], hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
     ];
 
     initializeMatch(home, away);
