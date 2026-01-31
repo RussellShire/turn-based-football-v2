@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { DndContext, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
+import React from 'react';
+import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { useGameStore } from '../store';
-import { GRID_WIDTH, GRID_HEIGHT } from '../engine/grid';
+import { GRID_WIDTH } from '../engine/grid';
 import { DraggablePlayer } from './DraggablePlayer';
 import { DroppableTile } from './DroppableTile';
 import { MoveCommand } from '../engine/commands/move';
