@@ -2,11 +2,14 @@ import { create } from 'zustand';
 import type { MatchState, MatchPlayer, TeamId } from './engine/types';
 import { GRID_WIDTH, GRID_HEIGHT } from './engine/grid';
 
+import { executeCommand } from './engine/processor';
+import type { Command, CommandResult } from './engine/commands';
+
 interface GameStore extends MatchState {
     // Actions
     initializeMatch: (homePlayers: MatchPlayer[], awayPlayers: MatchPlayer[]) => void;
     nextPhase: () => void;
-    // placeholder for more actions
+    dispatch: (command: Command) => CommandResult;
 }
 
 const INITIAL_STATE: Omit<MatchState, 'activeTeam' | 'players' | 'ballPosition'> = {
@@ -15,7 +18,7 @@ const INITIAL_STATE: Omit<MatchState, 'activeTeam' | 'players' | 'ballPosition'>
     gridSize: { width: GRID_WIDTH, height: GRID_HEIGHT },
 };
 
-export const useGameStore = create<GameStore>((set) => ({
+export const useGameStore = create<GameStore>((set, get) => ({
     ...INITIAL_STATE,
     activeTeam: 'HOME',
     players: [],
@@ -28,6 +31,14 @@ export const useGameStore = create<GameStore>((set) => ({
         activeTeam: 'HOME',
         ballPosition: { x: Math.floor(GRID_WIDTH / 2), y: Math.floor(GRID_HEIGHT / 2) }
     }),
+
+    dispatch: (command) => {
+        const result = executeCommand(get(), command);
+        if (result.success && result.newState) {
+            set(result.newState);
+        }
+        return result;
+    },
 
     nextPhase: () => set((state) => {
         // Simple cycle for now: PLANNING -> EXECUTION -> RESOLUTION -> PLANNING
