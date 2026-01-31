@@ -128,13 +128,50 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
         }
     });
 
+    // 5. Process Kicks / Actions
+    // We process kicks AFTER moves.
+    // We need to match Kick commands to the players who (likely) moved.
+
+    // Check for KICK commands
+    const kickCommands = initialState.plannedCommands.filter(c => c.type === 'KICK');
+
+    kickCommands.forEach(cmd => {
+        const kickerId = cmd.payload.playerId;
+        const target = cmd.payload.to;
+
+        // Find the kicker in the NEXT state (after moves)
+        const kickerIndex = nextPlayers.findIndex(p => p.id === kickerId);
+        if (kickerIndex === -1) return;
+
+        let kicker = nextPlayers[kickerIndex];
+
+        // Kicker must have the ball to kick
+        if (kicker.hasBall) {
+            // Execute Kick
+            kicker.hasBall = false;
+            nextBallPos = target;
+
+            // Mark as Acted
+            kicker.hasActedThisTurn = true;
+            nextPlayers[kickerIndex] = kicker;
+
+            // Check interception/reception at target
+            const receiverIndex = nextPlayers.findIndex(p => p.position.x === target.x && p.position.y === target.y);
+            if (receiverIndex !== -1) {
+                // Pass Complete!
+                nextPlayers[receiverIndex] = {
+                    ...nextPlayers[receiverIndex],
+                    hasBall: true
+                };
+            }
+        }
+    });
+
     return {
         ...initialState,
         players: nextPlayers,
         ballPosition: nextBallPos,
         plannedCommands: [], // Clear queue
-        phase: 'PLANNING' // Ready for next turn (or switch teams if strictly interleaved, but request implies SIMULTANEOUS)
-        // "when the turn ends both teams will move at once"
-        // So we resolve everything, then it's a new turn?
+        phase: 'PLANNING'
     };
 };

@@ -3,18 +3,28 @@ import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { useGameStore } from '../store';
 import { GRID_WIDTH } from '../engine/grid';
 import { DraggablePlayer } from './DraggablePlayer';
+import { DraggableBall } from './DraggableBall';
 import { DroppableTile } from './DroppableTile';
 import { GhostPlayer } from './GhostPlayer';
 import { MoveCommand } from '../engine/commands/move';
 import type { Vector2 } from '../engine/types';
 
 export const Pitch: React.FC = () => {
-    const { players, ballPosition, gridSize, dispatch, plannedCommands } = useGameStore();
+    const { players, ballPosition, gridSize, dispatch, plannedCommands, activeTeam } = useGameStore();
 
     // Extract planned moves
     const plannedMoves = React.useMemo(() => {
         return (plannedCommands || [])
             .filter(c => c.type === 'MOVE')
+            .map(c => ({
+                playerId: c.payload.playerId,
+                to: c.payload.to as Vector2
+            }));
+    }, [plannedCommands]);
+
+    const plannedKicks = React.useMemo(() => {
+        return (plannedCommands || [])
+            .filter(c => c.type === 'KICK')
             .map(c => ({
                 playerId: c.payload.playerId,
                 to: c.payload.to as Vector2
@@ -31,6 +41,23 @@ export const Pitch: React.FC = () => {
 
             const [, xStr, yStr] = overId.split('-');
             const targetPos: Vector2 = { x: parseInt(xStr), y: parseInt(yStr) };
+
+            // Check if it's the BALL being dragged
+            if (active.id === 'ball') {
+                // Who has the ball?
+                const carrier = players.find(p => p.hasBall);
+                if (carrier && carrier.teamId === activeTeam) {
+                    // Dispatch KICK Command
+                    dispatch({
+                        type: 'KICK',
+                        payload: { playerId: carrier.id, to: targetPos }, // Kick from carrier to target
+                        execute: () => ({ success: true }) // dummy
+                    });
+                }
+                return;
+            }
+
+            // Otherwise, Player Drag
             const playerId = active.id as string;
 
             // Dispatch Move Command
@@ -39,7 +66,6 @@ export const Pitch: React.FC = () => {
 
             if (!result.success) {
                 console.warn("Move failed:", result.error);
-                // Optional: Visual feedback handling
             }
         }
     };
@@ -56,6 +82,10 @@ export const Pitch: React.FC = () => {
             cells.push({ x, y });
         }
     }
+
+    // Find ball carrier to determine if draggable
+    const ballCarrier = players.find(p => p.hasBall);
+    const isBallHeldByActive = ballCarrier?.teamId === activeTeam;
 
     return (
         <DndContext onDragEnd={handleDragEnd}>
@@ -89,13 +119,15 @@ export const Pitch: React.FC = () => {
                             <marker id="arrowhead-away" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
                                 <polygon points="0 0, 6 2, 0 4" fill="#93c5fd" />
                             </marker>
+                            <marker id="arrowhead-ball" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
+                                <polygon points="0 0, 6 2, 0 4" fill="#fbbf24" />
+                            </marker>
                         </defs>
                         {plannedMoves.map((move, i) => {
                             const player = players.find(p => p.id === move.playerId);
                             if (!player) return null;
 
                             // Calculate pixel centroids based on 40px cell + 1px gap
-                            // These constants must match the CSS Grid layout
                             const CELL = 40;
                             const GAP = 1;
                             const TOTAL = CELL + GAP;
@@ -122,6 +154,24 @@ export const Pitch: React.FC = () => {
                                 />
                             );
                         })}
+
+                        {/* Kicks */}
+                        {plannedKicks.map((kick, i) => {
+                            const player = players.find(p => p.id === kick.playerId);
+                            if (!player) return null;
+
+                            let startPos = player.position;
+                            const plannedMove = plannedMoves.find(m => m.playerId === kick.playerId);
+                            if (plannedMove) startPos = plannedMove.to;
+
+                            const CELL = 40; const GAP = 1; const TOTAL = CELL + GAP; const OFFSET = CELL / 2;
+                            const startX = startPos.x * TOTAL + OFFSET;
+                            const startY = startPos.y * TOTAL + OFFSET;
+                            const endX = kick.to.x * TOTAL + OFFSET;
+                            const endY = kick.to.y * TOTAL + OFFSET;
+
+                            return <line key={`kick-${i}`} x1={startX} y1={startY} x2={endX} y2={endY} stroke="#fbbf24" strokeWidth="2" markerEnd="url(#arrowhead-ball)" opacity="1" />;
+                        })}
                     </svg>
 
                     {/* The Grid Itself */}
@@ -130,6 +180,7 @@ export const Pitch: React.FC = () => {
                         style={{
                             gridTemplateColumns: `repeat(${GRID_WIDTH}, minmax(0, 1fr))`,
                             width: 'fit-content',
+                            height: 'fit-content'
                         }}
                     >
                         {cells.map((cell) => {
@@ -151,11 +202,10 @@ export const Pitch: React.FC = () => {
                                             <DraggablePlayer player={playerHere} />
                                         </div>
                                     )}
-                                    {/* Ball Rendering */}
+
+                                    {/* Ball Rendering - Using DraggableBall */}
                                     {ballPosition.x === cell.x && ballPosition.y === cell.y && (
-                                        <div
-                                            className="absolute w-4 h-4 bg-white rounded-full shadow-md border border-gray-400 z-30 top-1 left-1 pointer-events-none"
-                                        />
+                                        <DraggableBall isHeld={isBallHeldByActive && !!playerHere} />
                                     )}
                                 </DroppableTile>
                             );
