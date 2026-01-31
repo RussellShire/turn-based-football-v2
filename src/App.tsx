@@ -21,7 +21,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center">
-      <h1 className="text-2xl font-bold mb-4">Turn-Based Football v2</h1>
+      <h1 className="text-lg text-red-500 font-bold mb-4">Turn-Based Football v2</h1>
       <Pitch />
       <div className="mt-4 text-gray-400 text-sm">
         <p>Pitch Grid: 24x16</p>
