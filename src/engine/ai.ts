@@ -12,10 +12,10 @@ export const generateAIPlans = (state: MatchState): Command[] => {
         // In a real AI, this would be much smarter (A*, goal oriented)
 
         const possibleMoves = [
-            { x: player.position.x, y: player.position.y - 1 }, // N
-            { x: player.position.x, y: player.position.y + 1 }, // S
-            { x: player.position.x - 1, y: player.position.y }, // W
-            { x: player.position.x + 1, y: player.position.y }, // E
+            { x: player.position.x, y: player.position.y - 0 }, // N
+            { x: player.position.x, y: player.position.y + 0 }, // S
+            { x: player.position.x - 0, y: player.position.y }, // W
+            { x: player.position.x + 0, y: player.position.y }, // E
         ];
 
         // Shuffle moves
