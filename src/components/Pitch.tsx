@@ -5,6 +5,7 @@ import { DraggablePlayer } from './DraggablePlayer';
 import { DraggableBall } from './DraggableBall';
 import { DroppableTile } from './DroppableTile';
 import { GhostPlayer } from './GhostPlayer';
+import { GhostBall } from './GhostBall';
 import { MoveCommand } from '../engine/commands/move';
 import { KickCommand } from '../engine/commands/kick';
 import type { Vector2 } from '../engine/types';
@@ -133,14 +134,24 @@ export const Pitch: React.FC = () => {
                                 {/* Render Ghosts in the tile */}
                                 {plannedMoves.filter(m => m.to.x === cell.x && m.to.y === cell.y).map(m => {
                                     const p = players.find(pl => pl.id === m.playerId);
-                                    return p ? <div key={`ghost-${m.playerId}`} className="absolute inset-0 z-10 pointer-events-none"><GhostPlayer player={p} /></div> : null;
+                                    if (!p) return null;
+                                    const hasPlannedKick = plannedKicks.some(k => k.playerId === p.id);
+                                    const willCarryBall = p.hasBall && !hasPlannedKick;
+
+                                    return (
+                                        <div key={`ghost-${m.playerId}`} className="absolute inset-0 z-10 pointer-events-none">
+                                            <GhostPlayer player={p} isKicking={hasPlannedKick} />
+                                            {/* If this player WILL carry ball, show a ghost ball at destination */}
+                                            {willCarryBall && <GhostBall />}
+                                        </div>
+                                    );
                                 })}
                             </DroppableTile>
                         ))}
                     </div>
 
                     {/* Arrows Overlay */}
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" style={{ overflow: 'visible' }}>
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-30" style={{ overflow: 'visible' }}>
                         <defs>
                             <marker id="arrowhead-home" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
                                 <polygon points="0 0, 6 2, 0 4" fill="#fca5a5" />
