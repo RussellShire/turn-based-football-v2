@@ -11,11 +11,13 @@ export const generateAIPlans = (state: MatchState): Command[] => {
         // Simple random move: Try random adjacent tiles until one is valid
         // In a real AI, this would be much smarter (A*, goal oriented)
 
+        const movementDistance = 0;
+
         const possibleMoves = [
-            { x: player.position.x, y: player.position.y - 2 }, // N
-            { x: player.position.x, y: player.position.y + 2 }, // S
-            { x: player.position.x - 2, y: player.position.y }, // W
-            { x: player.position.x + 2, y: player.position.y }, // E
+            { x: player.position.x, y: player.position.y - movementDistance }, // N
+            { x: player.position.x, y: player.position.y + movementDistance }, // S
+            { x: player.position.x - movementDistance, y: player.position.y }, // W
+            { x: player.position.x + movementDistance, y: player.position.y }, // E
         ];
 
         // Shuffle moves

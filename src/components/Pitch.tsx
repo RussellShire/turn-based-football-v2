@@ -179,9 +179,7 @@ export const Pitch: React.FC = () => {
                             const player = players.find(p => p.id === kick.playerId);
                             if (!player) return null;
 
-                            let startPos = player.position;
-                            const plannedMove = plannedMoves.find(m => m.playerId === kick.playerId);
-                            if (plannedMove) startPos = plannedMove.to;
+                            const startPos = player.position;
 
                             const startX = startPos.x * TOTAL_CELL + CELL_SIZE / 2;
                             const startY = startPos.y * TOTAL_CELL + CELL_SIZE / 2;
