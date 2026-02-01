@@ -6,6 +6,7 @@ import { DraggableBall } from './DraggableBall';
 import { DroppableTile } from './DroppableTile';
 import { GhostPlayer } from './GhostPlayer';
 import { MoveCommand } from '../engine/commands/move';
+import { KickCommand } from '../engine/commands/kick';
 import type { Vector2 } from '../engine/types';
 
 const CELL_SIZE = 40;
@@ -15,23 +16,28 @@ const TOTAL_CELL = CELL_SIZE + GAP_SIZE;
 export const Pitch: React.FC = () => {
     const { players, ballPosition, gridSize, dispatch, plannedCommands, activeTeam, phase } = useGameStore();
 
-    // Extract planned moves
     const plannedMoves = React.useMemo(() => {
         return (plannedCommands || [])
             .filter(c => c.type === 'MOVE')
-            .map(c => ({
-                playerId: c.payload.playerId,
-                to: c.payload.to as Vector2
-            }));
+            .map(c => {
+                const payload = c.payload as { playerId: string, to: Vector2 };
+                return {
+                    playerId: payload.playerId,
+                    to: payload.to
+                };
+            });
     }, [plannedCommands]);
 
     const plannedKicks = React.useMemo(() => {
         return (plannedCommands || [])
             .filter(c => c.type === 'KICK')
-            .map(c => ({
-                playerId: c.payload.playerId,
-                to: c.payload.to as Vector2
-            }));
+            .map(c => {
+                const payload = c.payload as { playerId: string, to: Vector2 };
+                return {
+                    playerId: payload.playerId,
+                    to: payload.to
+                };
+            });
     }, [plannedCommands]);
 
     const handleDragEnd = (event: DragEndEvent) => {
@@ -52,12 +58,9 @@ export const Pitch: React.FC = () => {
                 // Who has the ball?
                 const carrier = players.find(p => p.hasBall);
                 if (carrier && carrier.teamId === activeTeam) {
-                    // Dispatch KICK Command
-                    dispatch({
-                        type: 'KICK',
-                        payload: { playerId: carrier.id, to: targetPos }, // Kick from carrier to target
-                        execute: () => ({ success: true }) // dummy
-                    });
+                    // Dispatch KICK Command using our new class
+                    const command = new KickCommand({ playerId: carrier.id, to: targetPos });
+                    dispatch(command);
                 }
                 return;
             }
@@ -221,7 +224,6 @@ export const Pitch: React.FC = () => {
                         </div>
                     </div>
                 </div>
-
             </div>
         </DndContext>
     );

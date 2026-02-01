@@ -1,5 +1,4 @@
-import type { Command, CommandResult } from '../commands';
-import type { MatchState, Vector2 } from '../types';
+import type { Command, CommandResult, MatchState, Vector2 } from '../types';
 import { isValidTile, getManhattanDistance, arePositionsEqual } from '../grid';
 
 export interface MovePayload {

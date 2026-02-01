@@ -53,7 +53,7 @@ export interface CommandResult {
 
 export interface Command {
     type: string;
-    payload: any;
+    payload: unknown;
     execute(state: MatchState): CommandResult;
 }
 

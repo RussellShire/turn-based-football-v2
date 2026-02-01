@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { MatchState, MatchPlayer } from './engine/types';
 import { GRID_WIDTH, GRID_HEIGHT } from './engine/grid';
 import { executeCommand } from './engine/processor';
-import type { Command, CommandResult } from './engine/types'; // Updated import path
+import type { Command, CommandResult } from './engine/types';
 import { generateAIPlans } from './engine/ai';
 import { resolveTurn } from './engine/resolution';
 

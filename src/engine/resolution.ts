@@ -57,8 +57,10 @@ const collectMoves = (state: MatchState): MoveMap => {
     const moves: MoveMap = {};
     state.plannedCommands.forEach(cmd => {
         if (cmd.type === 'MOVE') {
-            moves[cmd.payload.playerId] = {
-                to: cmd.payload.to,
+            // Because payload is "unknown", we tell TypeScript exactly what's inside
+            const payload = cmd.payload as { playerId: string, to: Vector2 };
+            moves[payload.playerId] = {
+                to: payload.to,
                 command: cmd
             };
         }
@@ -240,8 +242,10 @@ const processKicks = (
     });
 
     kickCommands.forEach(cmd => {
-        const kickerId = cmd.payload.playerId;
-        const target = cmd.payload.to;
+        // We cast the payload to access the playerId and target position
+        const payload = cmd.payload as { playerId: string, to: Vector2 };
+        const kickerId = payload.playerId;
+        const target = payload.to;
 
         const kickerIndex = nextPlayers.findIndex(p => p.id === kickerId);
         if (kickerIndex === -1) return;

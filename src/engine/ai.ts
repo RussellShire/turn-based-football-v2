@@ -1,5 +1,6 @@
 import type { MatchState, Command } from './types';
 import { GRID_WIDTH, GRID_HEIGHT } from './grid';
+import { MoveCommand } from './commands/move';
 
 export const generateAIPlans = (state: MatchState): Command[] => {
     const aiCommands: Command[] = [];
@@ -36,11 +37,7 @@ export const generateAIPlans = (state: MatchState): Command[] => {
                 // Let's check current occupancy to be "smart-ish".
                 const occupied = state.players.some(p => p.position.x === target.x && p.position.y === target.y);
                 if (!occupied) {
-                    aiCommands.push({
-                        type: 'MOVE',
-                        payload: { playerId: player.id, to: target },
-                        execute: () => ({ success: true }) // Dummy execute, real one comes from MoveCommand class usually or we reconstruct
-                    });
+                    aiCommands.push(new MoveCommand({ playerId: player.id, to: target }));
                     break; // Found a move, stop
                 }
             }
