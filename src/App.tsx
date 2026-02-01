@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { Pitch } from './components/Pitch';
 import { useGameStore } from './store';
 import type { MatchPlayer } from './engine/types';

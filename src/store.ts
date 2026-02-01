@@ -66,7 +66,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return result;
     },
 
-    nextPhase: () => set((state) => {
+    nextPhase: () => {
+        const state = get();
         if (state.phase === 'PLANNING') {
             // 1. Generate AI Plans (Opponent - AWAY)
             const aiCommands = generateAIPlans(state);
@@ -75,20 +76,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
             const allCommands = [...state.plannedCommands, ...aiCommands];
 
             // 3. Resolve Turn
-            // Create a temp state with all commands to pass to resolver
             const planningState = { ...state, plannedCommands: allCommands };
-
             const resolvedState = resolveTurn(planningState);
 
-            return {
+            // Set to RESOLUTION phase first
+            set({
                 ...resolvedState,
-                turn: state.turn + 1,
-                phase: 'PLANNING',
-                activeTeam: 'HOME',
+                phase: 'RESOLUTION',
                 plannedCommands: [],
-            };
+            });
+
+            // Automatically transition to PLANNING after animation delay
+            setTimeout(() => {
+                set((s) => ({
+                    ...s,
+                    turn: s.turn + 1,
+                    phase: 'PLANNING',
+                    activeTeam: 'HOME',
+                }));
+            }, 1000); // 1s animation duration
         }
-        return state;
-    })
+    }
 }));
 

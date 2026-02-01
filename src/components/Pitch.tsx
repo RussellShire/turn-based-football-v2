@@ -1,7 +1,6 @@
 import React from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { useGameStore } from '../store';
-import { GRID_WIDTH } from '../engine/grid';
 import { DraggablePlayer } from './DraggablePlayer';
 import { DraggableBall } from './DraggableBall';
 import { DroppableTile } from './DroppableTile';
@@ -9,8 +8,12 @@ import { GhostPlayer } from './GhostPlayer';
 import { MoveCommand } from '../engine/commands/move';
 import type { Vector2 } from '../engine/types';
 
+const CELL_SIZE = 40;
+const GAP_SIZE = 1;
+const TOTAL_CELL = CELL_SIZE + GAP_SIZE;
+
 export const Pitch: React.FC = () => {
-    const { players, ballPosition, gridSize, dispatch, plannedCommands, activeTeam } = useGameStore();
+    const { players, ballPosition, gridSize, dispatch, plannedCommands, activeTeam, phase } = useGameStore();
 
     // Extract planned moves
     const plannedMoves = React.useMemo(() => {
@@ -32,6 +35,8 @@ export const Pitch: React.FC = () => {
     }, [plannedCommands]);
 
     const handleDragEnd = (event: DragEndEvent) => {
+        if (phase !== 'PLANNING') return;
+
         const { active, over } = event;
 
         if (over && active) {
@@ -70,11 +75,6 @@ export const Pitch: React.FC = () => {
         }
     };
 
-    // Helper to get player at specific coordinate for rendering
-    const getPlayerAt = (x: number, y: number) => {
-        return players.find(p => p.position.x === x && p.position.y === y);
-    };
-
     // Create grid cells
     const cells = [];
     for (let y = 0; y < gridSize.height; y++) {
@@ -98,19 +98,45 @@ export const Pitch: React.FC = () => {
                         <span className={useGameStore(s => s.activeTeam === 'HOME' ? 'text-red-400 font-bold' : 'text-blue-400 font-bold')}>
                             {useGameStore(s => s.activeTeam)} TEAM
                         </span>
-                        <span className="ml-2 text-gray-500 text-[10px] uppercase tracking-wider">{useGameStore(s => s.phase)}</span>
+                        <span className="ml-2 text-gray-500 text-[10px] uppercase tracking-wider">{phase}</span>
                     </div>
                     <button
                         onClick={() => useGameStore.getState().nextPhase()}
-                        className="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 text-white rounded font-bold transition-colors"
+                        disabled={phase !== 'PLANNING'}
+                        className="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white rounded font-bold transition-colors"
                     >
-                        {useGameStore(s => s.phase === 'PLANNING' ? 'END PLANNING' : 'CONTINUE')}
+                        {phase === 'PLANNING' ? 'END PLANNING' : 'RESOLVING...'}
                     </button>
                 </div>
 
                 {/* Grid Container for Layout */}
-                <div className="relative">
-                    {/* Arrows Overlay (Absolute over grid) */}
+                <div
+                    className="relative"
+                    style={{
+                        width: gridSize.width * TOTAL_CELL,
+                        height: gridSize.height * TOTAL_CELL
+                    }}
+                >
+                    {/* The Grid Background */}
+                    <div
+                        className="grid gap-px bg-green-900/30 absolute inset-0"
+                        style={{
+                            gridTemplateColumns: `repeat(${gridSize.width}, ${CELL_SIZE}px)`,
+                            gridTemplateRows: `repeat(${gridSize.height}, ${CELL_SIZE}px)`,
+                        }}
+                    >
+                        {cells.map((cell) => (
+                            <DroppableTile key={`${cell.x}-${cell.y}`} pos={cell}>
+                                {/* Render Ghosts in the tile */}
+                                {plannedMoves.filter(m => m.to.x === cell.x && m.to.y === cell.y).map(m => {
+                                    const p = players.find(pl => pl.id === m.playerId);
+                                    return p ? <div key={`ghost-${m.playerId}`} className="absolute inset-0 z-10 pointer-events-none"><GhostPlayer player={p} /></div> : null;
+                                })}
+                            </DroppableTile>
+                        ))}
+                    </div>
+
+                    {/* Arrows Overlay */}
                     <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" style={{ overflow: 'visible' }}>
                         <defs>
                             <marker id="arrowhead-home" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
@@ -127,16 +153,10 @@ export const Pitch: React.FC = () => {
                             const player = players.find(p => p.id === move.playerId);
                             if (!player) return null;
 
-                            // Calculate pixel centroids based on 40px cell + 1px gap
-                            const CELL = 40;
-                            const GAP = 1;
-                            const TOTAL = CELL + GAP;
-                            const OFFSET = CELL / 2;
-
-                            const startX = player.position.x * TOTAL + OFFSET;
-                            const startY = player.position.y * TOTAL + OFFSET;
-                            const endX = move.to.x * TOTAL + OFFSET;
-                            const endY = move.to.y * TOTAL + OFFSET;
+                            const startX = player.position.x * TOTAL_CELL + CELL_SIZE / 2;
+                            const startY = player.position.y * TOTAL_CELL + CELL_SIZE / 2;
+                            const endX = move.to.x * TOTAL_CELL + CELL_SIZE / 2;
+                            const endY = move.to.y * TOTAL_CELL + CELL_SIZE / 2;
 
                             const color = player.teamId === 'HOME' ? '#fca5a5' : '#93c5fd';
                             const marker = player.teamId === 'HOME' ? 'url(#arrowhead-home)' : 'url(#arrowhead-away)';
@@ -155,7 +175,6 @@ export const Pitch: React.FC = () => {
                             );
                         })}
 
-                        {/* Kicks */}
                         {plannedKicks.map((kick, i) => {
                             const player = players.find(p => p.id === kick.playerId);
                             if (!player) return null;
@@ -164,52 +183,44 @@ export const Pitch: React.FC = () => {
                             const plannedMove = plannedMoves.find(m => m.playerId === kick.playerId);
                             if (plannedMove) startPos = plannedMove.to;
 
-                            const CELL = 40; const GAP = 1; const TOTAL = CELL + GAP; const OFFSET = CELL / 2;
-                            const startX = startPos.x * TOTAL + OFFSET;
-                            const startY = startPos.y * TOTAL + OFFSET;
-                            const endX = kick.to.x * TOTAL + OFFSET;
-                            const endY = kick.to.y * TOTAL + OFFSET;
+                            const startX = startPos.x * TOTAL_CELL + CELL_SIZE / 2;
+                            const startY = startPos.y * TOTAL_CELL + CELL_SIZE / 2;
+                            const endX = kick.to.x * TOTAL_CELL + CELL_SIZE / 2;
+                            const endY = kick.to.y * TOTAL_CELL + CELL_SIZE / 2;
 
                             return <line key={`kick-${i}`} x1={startX} y1={startY} x2={endX} y2={endY} stroke="#fbbf24" strokeWidth="2" markerEnd="url(#arrowhead-ball)" opacity="1" />;
                         })}
                     </svg>
 
-                    {/* The Grid Itself */}
-                    <div
-                        className="grid gap-px bg-green-900/30"
-                        style={{
-                            gridTemplateColumns: `repeat(${GRID_WIDTH}, minmax(0, 1fr))`,
-                            width: 'fit-content',
-                            height: 'fit-content'
-                        }}
-                    >
-                        {cells.map((cell) => {
-                            const playerHere = getPlayerAt(cell.x, cell.y);
+                    {/* Actors Overlay (Absolute Positioned for Animation) */}
+                    <div className="absolute inset-0 pointer-events-none z-20">
+                        {players.map(player => (
+                            <div
+                                key={player.id}
+                                className="absolute pointer-events-auto transition-all duration-1000 ease-in-out"
+                                style={{
+                                    width: CELL_SIZE,
+                                    height: CELL_SIZE,
+                                    left: player.position.x * TOTAL_CELL,
+                                    top: player.position.y * TOTAL_CELL,
+                                }}
+                            >
+                                <DraggablePlayer player={player} />
+                            </div>
+                        ))}
 
-                            // Check for Ghost
-                            const movesHere = plannedMoves.filter(m => m.to.x === cell.x && m.to.y === cell.y);
-
-                            return (
-                                <DroppableTile key={`${cell.x}-${cell.y}`} pos={cell}>
-                                    {/* Render Ghosts */}
-                                    {movesHere.map(m => {
-                                        const p = players.find(pl => pl.id === m.playerId);
-                                        return p ? <div key={`ghost-${m.playerId}`} className="absolute inset-0 z-10 pointer-events-none"><GhostPlayer player={p} /></div> : null;
-                                    })}
-
-                                    {playerHere && (
-                                        <div className="absolute inset-0 z-20">
-                                            <DraggablePlayer player={playerHere} />
-                                        </div>
-                                    )}
-
-                                    {/* Ball Rendering - Using DraggableBall */}
-                                    {ballPosition.x === cell.x && ballPosition.y === cell.y && (
-                                        <DraggableBall isHeld={isBallHeldByActive && !!playerHere} />
-                                    )}
-                                </DroppableTile>
-                            );
-                        })}
+                        {/* Ball */}
+                        <div
+                            className="absolute pointer-events-auto transition-all duration-1000 cubic-bezier(0.4, 0, 0.2, 1)"
+                            style={{
+                                width: CELL_SIZE,
+                                height: CELL_SIZE,
+                                left: ballPosition.x * TOTAL_CELL,
+                                top: ballPosition.y * TOTAL_CELL,
+                            }}
+                        >
+                            <DraggableBall isHeld={isBallHeldByActive} />
+                        </div>
                     </div>
                 </div>
 
