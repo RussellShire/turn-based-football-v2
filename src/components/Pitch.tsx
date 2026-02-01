@@ -209,9 +209,9 @@ export const Pitch: React.FC = () => {
                             </div>
                         ))}
 
-                        {/* Ball */}
+                        {/* Ball - Container is pass-through, Ball itself is interactive */}
                         <div
-                            className="absolute pointer-events-auto transition-all duration-1000 cubic-bezier(0.4, 0, 0.2, 1)"
+                            className="absolute pointer-events-none transition-all duration-1000 cubic-bezier(0.4, 0, 0.2, 1)"
                             style={{
                                 width: CELL_SIZE,
                                 height: CELL_SIZE,

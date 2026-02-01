@@ -26,7 +26,7 @@ export const DraggableBall: React.FC<DraggableBallProps> = ({ isHeld }) => {
             {...attributes}
             className={`
                 absolute w-4 h-4 bg-white rounded-full shadow-md border border-gray-400 z-50 
-                top-1 left-1 
+                top-1 left-1 pointer-events-auto
                 ${isHeld ? 'cursor-grab hover:scale-110 transition-transform' : 'cursor-default'}
             `}
         />
