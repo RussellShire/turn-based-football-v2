@@ -2,62 +2,213 @@ import type { MatchState, Command, Vector2, MatchPlayer } from './types';
 import { getBresenhamLine, arePositionsEqual } from './grid';
 
 type MoveMap = { [playerId: string]: { to: { x: number, y: number }, command: Command } };
-type InterceptionMap = { [playerId: string]: { to: { x: number, y: number }, hasBall: boolean } };
 
+/**
+ * Resolves a tackle randomly between two players.
+ */
+const resolveTackle = (carrier: MatchPlayer, tackler: MatchPlayer): { winnerId: string } => {
+    // For now, 50/50 chance. Can be based on attributes later.
+    return Math.random() < 0.5 ? { winnerId: carrier.id } : { winnerId: tackler.id };
+};
+
+/**
+ * Resolves a turn by simulating movement and actions one tick (tile) at a time.
+ */
 export const resolveTurn = (initialState: MatchState): MatchState => {
-    // 1. Collect Moves (For identifying movers)
+    // 1. Collect Actions
     const moves = collectMoves(initialState);
+    const kickCommands = initialState.plannedCommands.filter(c => c.type === 'KICK');
+    const firstKick = kickCommands.length > 0 ? kickCommands[0] : null;
 
-    // 2. Resolve Collisions (For identifying who bounces)
-    const bouncedPlayerIds = resolveCollisions(initialState, moves);
+    // Clone state for simulation
+    const players = initialState.players.map(p => ({ ...p }));
+    let ballPos = { ...initialState.ballPosition };
+    let ballCarrierId = players.find(p => p.hasBall)?.id || null;
 
-    // 3. Process Kicks (Kicks happen with simultaneous player movement)
-    // Returns updated player state (possession) and interceptions (players who must stop)
-    const {
-        nextPlayers: playersAfterKicks,
-        nextBallPos: ballPosAfterKicks,
-        interceptions: kickInterceptions
-    } = processKicks(
-        initialState,
-        initialState.players,
-        initialState.ballPosition,
-        moves,
-        bouncedPlayerIds
+    // Track which tiles are "claimed" as final positions to avoid ending on same tile
+    // Initial stationary players claim their starting positions
+    const finalOccupants: { [key: string]: string } = {}; // "x,y" -> playerId
+    players.forEach(p => {
+        if (!moves[p.id]) {
+            finalOccupants[`${p.position.x},${p.position.y}`] = p.id;
+        }
+    });
+
+    // 2. Path Generation
+    const playerPaths: { [pid: string]: Vector2[] } = {};
+    players.forEach(p => {
+        if (moves[p.id]) {
+            playerPaths[p.id] = getBresenhamLine(p.position, moves[p.id].to);
+        } else {
+            playerPaths[p.id] = [p.position];
+        }
+    });
+
+    let ballPath: Vector2[] = [];
+    if (firstKick) {
+        const payload = firstKick.payload as { playerId: string, to: Vector2 };
+        ballPath = getBresenhamLine(ballPos, payload.to);
+        // Remove ball from carrier if they are the kicker
+        if (ballCarrierId === payload.playerId) {
+            const kicker = players.find(p => p.id === ballCarrierId)!;
+            kicker.hasBall = false;
+            kicker.hasActedThisTurn = true;
+            ballCarrierId = null;
+        }
+    } else if (ballCarrierId) {
+        ballPath = playerPaths[ballCarrierId];
+    } else {
+        ballPath = [ballPos];
+    }
+
+    const maxTicks = Math.max(
+        ...Object.values(playerPaths).map(p => p.length),
+        ballPath.length
     );
 
-    // 4. Resolve Ball Interceptions (Movers picking up the ball at its FINAL post-kick position)
-    // This is for mid-move pickups of a ball that might have been loose already or just landed.
-    const midMoveInterceptions = resolveBallInterceptions(initialState, moves, bouncedPlayerIds, ballPosAfterKicks);
+    const isStopped: { [pid: string]: boolean } = {};
+    let isBallStopped = false;
 
-    // Merge interceptions: Kick interceptions (mid-flight) and loose ball pickups.
-    const allInterceptions = { ...midMoveInterceptions, ...kickInterceptions };
+    // 3. Simulation Loop
+    for (let t = 1; t < maxTicks; t++) {
+        // Calculate where everyone WANTS to be this tick
+        const proposedPositions: { [pid: string]: Vector2 } = {};
+        players.forEach(p => {
+            if (isStopped[p.id]) {
+                proposedPositions[p.id] = p.position;
+            } else {
+                const path = playerPaths[p.id];
+                proposedPositions[p.id] = path[t] || path[path.length - 1];
+            }
+        });
 
-    // 5. Apply Moves
-    let { nextPlayers, nextBallPos } = applyMoves(
-        moves,
-        bouncedPlayerIds,
-        allInterceptions,
-        playersAfterKicks,
-        ballPosAfterKicks
-    );
+        // TILE OCCUPANCY CHECK: If a player reaches their destination, can they claim it?
+        players.forEach(p => {
+            if (isStopped[p.id] || !moves[p.id]) return;
+
+            const path = playerPaths[p.id];
+            const isAtEnd = t >= path.length - 1;
+
+            if (isAtEnd) {
+                const pos = proposedPositions[p.id];
+                const key = `${pos.x},${pos.y}`;
+                if (finalOccupants[key] && finalOccupants[key] !== p.id) {
+                    // Tile taken! Stop short.
+                    isStopped[p.id] = true;
+                    // No change to p.position, it remains at path[t-1]
+                } else {
+                    // Claim it
+                    finalOccupants[key] = p.id;
+                }
+            }
+        });
+
+        let proposedBallPos = ballPos;
+        if (!isBallStopped) {
+            if (ballCarrierId && !isStopped[ballCarrierId]) {
+                proposedBallPos = proposedPositions[ballCarrierId];
+            } else {
+                proposedBallPos = ballPath[t] || ballPath[ballPath.length - 1];
+            }
+        }
+
+        // Check Interceptions/Tackles
+        if (!isBallStopped) {
+            for (const p of players) {
+                if (p.id === ballCarrierId) continue;
+
+                const pPos = proposedPositions[p.id];
+                const prevPPos = p.position;
+                const prevBallPos = ballPos;
+
+                let intercepted = false;
+                let interceptTile = proposedBallPos;
+
+                if (arePositionsEqual(pPos, proposedBallPos)) {
+                    intercepted = true;
+                } else if (arePositionsEqual(pPos, prevBallPos) && arePositionsEqual(proposedBallPos, prevPPos)) {
+                    intercepted = true;
+                    interceptTile = pPos;
+                }
+
+                if (intercepted) {
+                    let ballWinnerId = p.id;
+
+                    if (ballCarrierId) {
+                        const carrier = players.find(c => c.id === ballCarrierId)!;
+                        const result = resolveTackle(carrier, p);
+                        ballWinnerId = result.winnerId;
+
+                        carrier.hasBall = false;
+                        carrier.currentHP = Math.max(0, carrier.currentHP - 1);
+                        isStopped[carrier.id] = true;
+                    }
+
+                    // Reset both to stopped status
+                    isStopped[p.id] = true;
+
+                    const winner = players.find(w => w.id === ballWinnerId)!;
+
+                    // Winner takes tile ONLY if it is free or they already claimed it
+                    const key = `${interceptTile.x},${interceptTile.y}`;
+                    const currentOccupant = finalOccupants[key];
+                    const canWinnerTakeTile = !currentOccupant || currentOccupant === winner.id;
+
+                    if (canWinnerTakeTile) {
+                        winner.position = interceptTile;
+                        finalOccupants[key] = winner.id;
+                        ballPos = interceptTile;
+                    } else {
+                        // Winner stops short, ball stays with them at their previous tile
+                        ballPos = winner.position;
+                    }
+
+                    winner.hasBall = true;
+                    ballCarrierId = ballWinnerId;
+                    isBallStopped = true;
+                    break;
+                }
+            }
+        }
+
+        // Move everyone who wasn't stopped to their proposed positions
+        players.forEach(p => {
+            if (!isStopped[p.id]) {
+                p.position = proposedPositions[p.id];
+            }
+        });
+        if (!isBallStopped) {
+            ballPos = proposedBallPos;
+        }
+    }
+
+    // Update HP and reset turn flags
+    const finalPlayers = players.map(p => {
+        const initialP = initialState.players.find(ip => ip.id === p.id);
+        const initialPos = initialP ? initialP.position : p.position;
+        const moved = !arePositionsEqual(p.position, initialPos);
+
+        return {
+            ...p,
+            currentHP: moved ? p.currentHP - 1 : p.currentHP,
+            hasMovedThisTurn: false,
+            hasActedThisTurn: false
+        } as MatchPlayer;
+    });
 
     return {
         ...initialState,
-        players: nextPlayers,
-        ballPosition: nextBallPos,
-        plannedCommands: [], // Clear queue
+        players: finalPlayers,
+        ballPosition: ballPos,
+        plannedCommands: [],
         phase: 'PLANNING'
     };
 };
 
-/**
- * 1. Collect all valid MoveCommands
- */
 const collectMoves = (state: MatchState): MoveMap => {
     const moves: MoveMap = {};
     state.plannedCommands.forEach(cmd => {
         if (cmd.type === 'MOVE') {
-            // Because payload is "unknown", we tell TypeScript exactly what's inside
             const payload = cmd.payload as { playerId: string, to: Vector2 };
             moves[payload.playerId] = {
                 to: payload.to,
@@ -66,238 +217,4 @@ const collectMoves = (state: MatchState): MoveMap => {
         }
     });
     return moves;
-};
-
-/**
- * 2. Identify and Resolve Collisions
- * Returns a Set of player IDs that must bounce back to their original position.
- */
-const resolveCollisions = (state: MatchState, moves: MoveMap): Set<string> => {
-    const bouncedPlayerIds = new Set<string>();
-    const targetCounts: { [key: string]: string[] } = {}; // "x,y" -> [playerIds]
-
-    // Count targets
-    Object.keys(moves).forEach(pid => {
-        const dest = moves[pid].to;
-        const key = `${dest.x},${dest.y}`;
-        if (!targetCounts[key]) targetCounts[key] = [];
-        targetCounts[key].push(pid);
-    });
-
-    // Check Type A: Multiple players to same tile
-    Object.entries(targetCounts).forEach(([key, pids]) => {
-        if (pids.length > 1) {
-            // Collision! All bounce back.
-            pids.forEach(pid => bouncedPlayerIds.add(pid));
-        } else {
-            // Only 1 player moving here. But is it occupied by a stationary player?
-            const [tx, ty] = key.split(',').map(Number);
-            const occupant = state.players.find(p => p.position.x === tx && p.position.y === ty);
-            if (occupant && !moves[occupant.id]) {
-                // Trying to move into a stationary player -> Bounce
-                bouncedPlayerIds.add(pids[0]);
-            }
-        }
-    });
-
-    // Check Type B: Head-on Swaps
-    Object.keys(moves).forEach(pidA => {
-        if (bouncedPlayerIds.has(pidA)) return; // Already bounced
-
-        const targetA = moves[pidA].to;
-        const playerB = state.players.find(p => p.position.x === targetA.x && p.position.y === targetA.y);
-
-        if (playerB && moves[playerB.id]) {
-            const targetB = moves[playerB.id].to;
-            const originalPosA = state.players.find(p => p.id === pidA)!.position;
-
-            if (targetB.x === originalPosA.x && targetB.y === originalPosA.y) {
-                bouncedPlayerIds.add(pidA);
-                bouncedPlayerIds.add(playerB.id);
-            }
-        }
-    });
-
-    return bouncedPlayerIds;
-};
-
-/**
- * 3. Resolve Mid-Turn Ball Interceptions (Loose Ball Pickup)
- */
-const resolveBallInterceptions = (
-    state: MatchState,
-    moves: MoveMap,
-    bouncedPlayerIds: Set<string>,
-    currentBallPos: Vector2
-): InterceptionMap => {
-    const interceptedMoves: InterceptionMap = {};
-    const isBallLoose = !state.players.some(p => p.hasBall);
-
-    if (isBallLoose) {
-        let bestInterceptor: { playerId: string, ticks: number } | null = null;
-
-        for (const pid of Object.keys(moves)) {
-            if (bouncedPlayerIds.has(pid)) continue;
-
-            const startPos = state.players.find(p => p.id === pid)!.position;
-            const endPos = moves[pid].to;
-            const path = getBresenhamLine(startPos, endPos);
-
-            const index = path.findIndex(p => arePositionsEqual(p, currentBallPos));
-
-            if (index > 0) {
-                if (!bestInterceptor || index < bestInterceptor.ticks) {
-                    bestInterceptor = { playerId: pid, ticks: index };
-                }
-            }
-        }
-
-        if (bestInterceptor) {
-            interceptedMoves[bestInterceptor.playerId] = {
-                to: currentBallPos, // Stop at ball
-                hasBall: true
-            };
-        }
-    }
-
-    return interceptedMoves;
-};
-
-/**
- * 4. Apply Moves to generate Next State
- */
-const applyMoves = (
-    moves: MoveMap,
-    bouncedPlayerIds: Set<string>,
-    interceptedMoves: InterceptionMap,
-    basePlayers: MatchPlayer[],
-    baseBallPos: Vector2
-) => {
-    let nextBallPos = { ...baseBallPos };
-    const nextPlayers = basePlayers.map(p => {
-        if (moves[p.id] && !bouncedPlayerIds.has(p.id)) {
-            let target = moves[p.id].to;
-            let hasBall = p.hasBall;
-
-            if (interceptedMoves[p.id]) {
-                target = interceptedMoves[p.id].to;
-                hasBall = interceptedMoves[p.id].hasBall;
-            }
-
-            // Fallback: Check Pickup at FINAL Dest
-            const ballWasLoose = !basePlayers.some(pl => pl.hasBall);
-            if (!interceptedMoves[p.id] && ballWasLoose && arePositionsEqual(target, baseBallPos)) {
-                hasBall = true;
-            }
-
-            if (hasBall) {
-                nextBallPos = target;
-            }
-
-            return {
-                ...p,
-                position: target,
-                currentHP: p.currentHP - 1,
-                hasMovedThisTurn: false,
-                hasActedThisTurn: false,
-                hasBall: hasBall,
-            };
-        } else {
-            return {
-                ...p,
-                hasMovedThisTurn: false,
-                hasActedThisTurn: false
-            };
-        }
-    });
-
-    return { nextPlayers, nextBallPos };
-};
-
-/**
- * 5. Process Kicks with simultaneous player movements
- */
-const processKicks = (
-    state: MatchState,
-    players: MatchPlayer[],
-    ballPos: Vector2,
-    moves: MoveMap,
-    bouncedPlayerIds: Set<string>
-): { nextPlayers: MatchPlayer[], nextBallPos: Vector2, interceptions: InterceptionMap } => {
-    let nextPlayers = players.map(p => ({ ...p }));
-    let nextBallPos = { ...ballPos };
-    const interceptions: InterceptionMap = {};
-
-    const kickCommands = state.plannedCommands.filter(c => c.type === 'KICK');
-
-    // Pre-calculate paths for all players to check simultaneous collision
-    const playerPaths: { [pid: string]: Vector2[] } = {};
-    players.forEach(p => {
-        const start = p.position;
-        if (moves[p.id] && !bouncedPlayerIds.has(p.id)) {
-            playerPaths[p.id] = getBresenhamLine(start, moves[p.id].to);
-        } else {
-            playerPaths[p.id] = [start]; // Stationary
-        }
-    });
-
-    kickCommands.forEach(cmd => {
-        // We cast the payload to access the playerId and target position
-        const payload = cmd.payload as { playerId: string, to: Vector2 };
-        const kickerId = payload.playerId;
-        const target = payload.to;
-
-        const kickerIndex = nextPlayers.findIndex(p => p.id === kickerId);
-        if (kickerIndex === -1) return;
-
-        let kicker = nextPlayers[kickerIndex];
-
-        if (kicker.hasBall) {
-            kicker.hasBall = false;
-            let actualTarget = target;
-            let interceptorId: string | null = null;
-
-            // Ball Flight Path
-            const ballPath = getBresenhamLine(kicker.position, target);
-
-            // SIMULATION: Check each tick of the flight
-            // Tick 0 is release. We start checking from Tick 1.
-            for (let t = 1; t < ballPath.length; t++) {
-                const bPos = ballPath[t];
-
-                // Identify if any player is at bPos at time t
-                for (const pid of Object.keys(playerPaths)) {
-                    if (pid === kickerId) continue; // Kicker can't intercept own ball on first move
-
-                    const pPath = playerPaths[pid];
-                    const pPos = pPath[t] || pPath[pPath.length - 1]; // Use last pos if movement ended
-
-                    if (arePositionsEqual(bPos, pPos)) {
-                        // HIT!
-                        interceptorId = pid;
-                        actualTarget = bPos;
-                        break;
-                    }
-                }
-                if (interceptorId) break;
-            }
-
-            nextBallPos = actualTarget;
-            kicker.hasActedThisTurn = true;
-            nextPlayers[kickerIndex] = kicker;
-
-            if (interceptorId) {
-                const idx = nextPlayers.findIndex(p => p.id === interceptorId);
-                nextPlayers[idx].hasBall = true;
-
-                // Interceptor must stop at actualTarget
-                interceptions[interceptorId] = {
-                    to: actualTarget,
-                    hasBall: true
-                };
-            }
-        }
-    });
-
-    return { nextPlayers, nextBallPos, interceptions };
 };
