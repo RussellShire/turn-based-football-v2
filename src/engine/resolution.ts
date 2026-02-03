@@ -3,153 +3,109 @@ import { getBresenhamLine, arePositionsEqual } from './grid';
 
 type MoveMap = { [playerId: string]: { to: { x: number, y: number }, command: Command } };
 
-/**
- * Resolves a tackle randomly between two players.
- */
+// --- Simulation Helpers ---
+
 const resolveTackle = (carrier: MatchPlayer, tackler: MatchPlayer): { winnerId: string } => {
-    // For now, 50/50 chance. Can be based on attributes later.
     return Math.random() < 0.5 ? { winnerId: carrier.id } : { winnerId: tackler.id };
 };
 
-/**
- * Resolves a turn by simulating movement and actions one tick (tile) at a time.
- */
+const getPosAtTick = (path: Vector2[], t: number): Vector2 => path[t] || path[path.length - 1];
+
+const getFinalOccupantsMap = (players: MatchPlayer[], moves: MoveMap): Record<string, string> => {
+    const map: Record<string, string> = {};
+    players.forEach(p => {
+        if (!moves[p.id]) map[`${p.position.x},${p.position.y}`] = p.id;
+    });
+    return map;
+};
+
+// --- Main Resolution Logic ---
+
 export const resolveTurn = (initialState: MatchState): MatchState => {
-    // 1. Collect Actions
     const moves = collectMoves(initialState);
     const kickCommands = initialState.plannedCommands.filter(c => c.type === 'KICK');
     const firstKick = kickCommands.length > 0 ? kickCommands[0] : null;
 
-    // Clone state for simulation
+    // 1. Simulation State Initialization
     const players = initialState.players.map(p => ({ ...p }));
     let ballPos = { ...initialState.ballPosition };
     let ballCarrierId = players.find(p => p.hasBall)?.id || null;
+    const finalOccupants = getFinalOccupantsMap(players, moves);
 
-    // Track which tiles are "claimed" as final positions to avoid ending on same tile
-    // Initial stationary players claim their starting positions
-    const finalOccupants: { [key: string]: string } = {}; // "x,y" -> playerId
+    // 2. Path Calculation
+    const playerPaths: Record<string, Vector2[]> = {};
     players.forEach(p => {
-        if (!moves[p.id]) {
-            finalOccupants[`${p.position.x},${p.position.y}`] = p.id;
-        }
+        playerPaths[p.id] = moves[p.id] ? getBresenhamLine(p.position, moves[p.id].to) : [p.position];
     });
 
-    // 2. Path Generation
-    const playerPaths: { [pid: string]: Vector2[] } = {};
-    players.forEach(p => {
-        if (moves[p.id]) {
-            playerPaths[p.id] = getBresenhamLine(p.position, moves[p.id].to);
-        } else {
-            playerPaths[p.id] = [p.position];
-        }
-    });
-
-    let ballPath: Vector2[] = [];
+    let ballPath: Vector2[] = [ballPos];
     if (firstKick) {
         const payload = firstKick.payload as { playerId: string, to: Vector2 };
         ballPath = getBresenhamLine(ballPos, payload.to);
-        // Remove ball from carrier if they are the kicker
         if (ballCarrierId === payload.playerId) {
-            const kicker = players.find(p => p.id === ballCarrierId)!;
-            kicker.hasBall = false;
-            kicker.hasActedThisTurn = true;
+            players.find(p => p.id === ballCarrierId)!.hasBall = false;
+            players.find(p => p.id === ballCarrierId)!.hasActedThisTurn = true;
             ballCarrierId = null;
         }
     } else if (ballCarrierId) {
         ballPath = playerPaths[ballCarrierId];
-    } else {
-        ballPath = [ballPos];
     }
 
-    const maxTicks = Math.max(
-        ...Object.values(playerPaths).map(p => p.length),
-        ballPath.length
-    );
-
-    const isStopped: { [pid: string]: boolean } = {};
+    const maxTicks = Math.max(...Object.values(playerPaths).map(p => p.length), ballPath.length);
+    const isStopped: Record<string, boolean> = {};
     let isBallStopped = false;
 
     // 3. Simulation Loop
     for (let t = 1; t < maxTicks; t++) {
-        // Calculate where everyone WANTS to be this tick
-        const proposedPositions: { [pid: string]: Vector2 } = {};
+        // Calculate proposed movement for this tick
+        const proposed: Record<string, Vector2> = {};
         players.forEach(p => {
-            if (isStopped[p.id]) {
-                proposedPositions[p.id] = p.position;
-            } else {
-                const path = playerPaths[p.id];
-                proposedPositions[p.id] = path[t] || path[path.length - 1];
-            }
+            proposed[p.id] = isStopped[p.id] ? p.position : getPosAtTick(playerPaths[p.id], t);
         });
 
-        // TILE OCCUPANCY CHECK: If a player reaches their destination, can they claim it?
+        // TILE OCCUPANCY: Prevent players ending on same tile (first-come first-served)
         players.forEach(p => {
             if (isStopped[p.id] || !moves[p.id]) return;
-
             const path = playerPaths[p.id];
-            const isAtEnd = t >= path.length - 1;
-
-            if (isAtEnd) {
-                const pos = proposedPositions[p.id];
-                const key = `${pos.x},${pos.y}`;
+            if (t >= path.length - 1) { // Final destination
+                const key = `${proposed[p.id].x},${proposed[p.id].y}`;
                 if (finalOccupants[key] && finalOccupants[key] !== p.id) {
-                    // Tile taken! Stop short.
-                    isStopped[p.id] = true;
-                    // No change to p.position, it remains at path[t-1]
+                    isStopped[p.id] = true; // Stop short
                 } else {
-                    // Claim it
                     finalOccupants[key] = p.id;
                 }
             }
         });
 
-        let proposedBallPos = ballPos;
-        if (!isBallStopped) {
-            if (ballCarrierId && !isStopped[ballCarrierId]) {
-                proposedBallPos = proposedPositions[ballCarrierId];
-            } else {
-                proposedBallPos = ballPath[t] || ballPath[ballPath.length - 1];
-            }
-        }
+        const proposedBallPos = !isBallStopped
+            ? (ballCarrierId && !isStopped[ballCarrierId] ? proposed[ballCarrierId] : getPosAtTick(ballPath, t))
+            : ballPos;
 
-        // Check Interceptions/Tackles
+        // INTERCEPTIONS & TACKLES
         if (!isBallStopped) {
             for (const p of players) {
                 if (p.id === ballCarrierId) continue;
 
-                const pPos = proposedPositions[p.id];
-                const prevPPos = p.position;
-                const prevBallPos = ballPos;
-
-                let intercepted = false;
-                let interceptTile = proposedBallPos;
-
-                if (arePositionsEqual(pPos, proposedBallPos)) {
-                    intercepted = true;
-                } else if (arePositionsEqual(pPos, prevBallPos) && arePositionsEqual(proposedBallPos, prevPPos)) {
-                    intercepted = true;
-                    interceptTile = pPos;
-                }
+                const intercepted = arePositionsEqual(proposed[p.id], proposedBallPos) ||
+                    (arePositionsEqual(proposed[p.id], ballPos) && arePositionsEqual(proposedBallPos, p.position));
 
                 if (intercepted) {
+                    const interceptTile = arePositionsEqual(proposed[p.id], proposedBallPos) ? proposedBallPos : proposed[p.id];
                     let ballWinnerId = p.id;
 
                     if (ballCarrierId) {
                         const carrier = players.find(c => c.id === ballCarrierId)!;
                         const result = resolveTackle(carrier, p);
                         ballWinnerId = result.winnerId;
-
                         carrier.hasBall = false;
                         carrier.currentHP = Math.max(0, carrier.currentHP - 1);
                         isStopped[carrier.id] = true;
                     }
 
-                    // Reset both to stopped status
                     isStopped[p.id] = true;
-
                     const winner = players.find(w => w.id === ballWinnerId)!;
 
-                    // Winner takes tile ONLY if it is free or they already claimed it
+                    // Winner takes tile only if free or they already claimed it
                     const key = `${interceptTile.x},${interceptTile.y}`;
                     const currentOccupant = finalOccupants[key];
                     const canWinnerTakeTile = !currentOccupant || currentOccupant === winner.id;
@@ -159,8 +115,7 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
                         finalOccupants[key] = winner.id;
                         ballPos = interceptTile;
                     } else {
-                        // Winner stops short, ball stays with them at their previous tile
-                        ballPos = winner.position;
+                        ballPos = winner.position; // Stay at previous tile with ball
                     }
 
                     winner.hasBall = true;
@@ -171,23 +126,20 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
             }
         }
 
-        // Move everyone who wasn't stopped to their proposed positions
-        players.forEach(p => {
-            if (!isStopped[p.id]) {
-                p.position = proposedPositions[p.id];
-            }
-        });
-        if (!isBallStopped) {
-            ballPos = proposedBallPos;
-        }
+        // Apply movement for this tick
+        players.forEach(p => { if (!isStopped[p.id]) p.position = proposed[p.id]; });
+        if (!isBallStopped) ballPos = proposedBallPos;
     }
 
-    // Update HP and reset turn flags
-    const finalPlayers = players.map(p => {
-        const initialP = initialState.players.find(ip => ip.id === p.id);
-        const initialPos = initialP ? initialP.position : p.position;
-        const moved = !arePositionsEqual(p.position, initialPos);
+    return finalizeState(initialState, players, ballPos);
+};
 
+// --- State Finalization ---
+
+const finalizeState = (initial: MatchState, players: MatchPlayer[], ballPos: Vector2): MatchState => {
+    const finalPlayers = players.map(p => {
+        const initialP = initial.players.find(ip => ip.id === p.id);
+        const moved = initialP && !arePositionsEqual(p.position, initialP.position);
         return {
             ...p,
             currentHP: moved ? p.currentHP - 1 : p.currentHP,
@@ -197,7 +149,7 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
     });
 
     return {
-        ...initialState,
+        ...initial,
         players: finalPlayers,
         ballPosition: ballPos,
         plannedCommands: [],
@@ -210,10 +162,7 @@ const collectMoves = (state: MatchState): MoveMap => {
     state.plannedCommands.forEach(cmd => {
         if (cmd.type === 'MOVE') {
             const payload = cmd.payload as { playerId: string, to: Vector2 };
-            moves[payload.playerId] = {
-                to: payload.to,
-                command: cmd
-            };
+            moves[payload.playerId] = { to: payload.to, command: cmd };
         }
     });
     return moves;
