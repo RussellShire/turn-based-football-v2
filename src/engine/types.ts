@@ -66,6 +66,10 @@ export interface MatchState {
     ballPosition: Vector2;
 
     plannedCommands: Command[];
-
     gridSize: { width: number; height: number };
+
+    // Match Progress
+    currentHalf: number;
+    maxTurnsPerHalf: number;
+    isGameOver: boolean;
 }

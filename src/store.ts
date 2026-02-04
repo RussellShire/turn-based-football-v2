@@ -18,6 +18,9 @@ const INITIAL_STATE: Omit<MatchState, 'activeTeam' | 'players' | 'ballPosition'>
     phase: 'PLANNING',
     plannedCommands: [],
     gridSize: { width: GRID_WIDTH, height: GRID_HEIGHT },
+    currentHalf: 1,
+    maxTurnsPerHalf: 10,
+    isGameOver: false,
 };
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -27,12 +30,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     ballPosition: { x: 12, y: 8 }, // Center
 
     initializeMatch: (homePlayers, awayPlayers) => set({
+        ...INITIAL_STATE,
         players: [...homePlayers, ...awayPlayers],
-        turn: 1,
-        phase: 'PLANNING',
-        activeTeam: 'HOME',
         ballPosition: { x: Math.floor(GRID_WIDTH / 2), y: Math.floor(GRID_HEIGHT / 2) },
-        plannedCommands: []
     }),
 
     dispatch: (command) => {
@@ -68,6 +68,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     nextPhase: () => {
         const state = get();
+        if (state.isGameOver) return;
+
         if (state.phase === 'PLANNING') {
             // 1. Generate AI Plans (Opponent - AWAY)
             const aiCommands = generateAIPlans(state);
@@ -86,14 +88,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 plannedCommands: [],
             });
 
-            // Automatically transition to PLANNING after animation delay
+            // Automatically transition to next state after animation delay
             setTimeout(() => {
-                set((s) => ({
-                    ...s,
-                    turn: s.turn + 1,
-                    phase: 'PLANNING',
-                    activeTeam: 'HOME',
-                }));
+                set((s) => {
+                    let nextTurn = s.turn + 1;
+                    let nextHalf = s.currentHalf;
+                    let gameOver = false;
+
+                    if (nextTurn > s.maxTurnsPerHalf) {
+                        if (s.currentHalf === 1) {
+                            nextHalf = 2;
+                            nextTurn = 1;
+                        } else {
+                            gameOver = true;
+                            // Keep final turn count or set back to max
+                        }
+                    }
+
+                    return {
+                        ...s,
+                        turn: nextTurn,
+                        currentHalf: nextHalf,
+                        isGameOver: gameOver,
+                        phase: 'PLANNING',
+                        activeTeam: 'HOME',
+                    };
+                });
             }, 1000); // 1s animation duration
         }
     }

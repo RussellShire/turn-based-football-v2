@@ -15,7 +15,10 @@ const GAP_SIZE = 1;
 const TOTAL_CELL = CELL_SIZE + GAP_SIZE;
 
 export const Pitch: React.FC = () => {
-    const { players, ballPosition, gridSize, dispatch, plannedCommands, activeTeam, phase } = useGameStore();
+    const {
+        players, ballPosition, gridSize, dispatch, plannedCommands, activeTeam, phase,
+        turn, currentHalf, maxTurnsPerHalf, isGameOver
+    } = useGameStore();
 
     const plannedMoves = React.useMemo(() => {
         return (plannedCommands || [])
@@ -98,20 +101,35 @@ export const Pitch: React.FC = () => {
                 {/* HUD Overlay */}
                 <div className="absolute top-2 left-2 z-50 bg-black/60 text-white p-2 rounded backdrop-blur-sm text-xs border border-white/10 flex gap-4 items-center">
                     <div>
-                        <span className="font-bold block text-gray-400">TURN {useGameStore(s => s.turn)}</span>
-                        <span className={useGameStore(s => s.activeTeam === 'HOME' ? 'text-red-400 font-bold' : 'text-blue-400 font-bold')}>
-                            {useGameStore(s => s.activeTeam)} TEAM
+                        <span className="font-bold block text-gray-400">
+                            HALF {currentHalf} | TURN {turn}/{maxTurnsPerHalf}
+                        </span>
+                        <span className={activeTeam === 'HOME' ? 'text-red-400 font-bold' : 'text-blue-400 font-bold'}>
+                            {activeTeam} TEAM
                         </span>
                         <span className="ml-2 text-gray-500 text-[10px] uppercase tracking-wider">{phase}</span>
                     </div>
                     <button
                         onClick={() => useGameStore.getState().nextPhase()}
-                        disabled={phase !== 'PLANNING'}
+                        disabled={phase !== 'PLANNING' || isGameOver}
                         className="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white rounded font-bold transition-colors"
                     >
-                        {phase === 'PLANNING' ? 'END PLANNING' : 'RESOLVING...'}
+                        {isGameOver ? 'MATCH ENDED' : (phase === 'PLANNING' ? 'END PLANNING' : 'RESOLVING...')}
                     </button>
                 </div>
+
+                {/* Game Over Overlay */}
+                {isGameOver && (
+                    <div className="absolute inset-0 z-[100] bg-black/70 flex flex-col items-center justify-center backdrop-blur-md">
+                        <h1 className="text-5xl font-black text-white mb-4 tracking-tighter italic scale-110">GAME OVER</h1>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="px-8 py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-full shadow-2xl transition-transform hover:scale-110 active:scale-95 border-2 border-white/20"
+                        >
+                            REPLAY MATCH
+                        </button>
+                    </div>
+                )}
 
                 {/* Grid Container for Layout */}
                 <div

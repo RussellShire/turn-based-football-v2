@@ -4,7 +4,7 @@ import type { MatchState } from './types';
 
 const createDummyState = (): MatchState => ({
     turn: 1,
-    phase: 'PLANNING', // Important: Resolution logic likely resets to PLANNING
+    phase: 'PLANNING',
     activeTeam: 'HOME',
     gridSize: { width: 10, height: 10 },
     ballPosition: { x: 5, y: 5 },
@@ -20,7 +20,10 @@ const createDummyState = (): MatchState => ({
             facingDirection: 'W', currentHP: 100, modifiers: [], hasBall: false,
             hasMovedThisTurn: false, hasActedThisTurn: false
         }
-    ]
+    ],
+    currentHalf: 1,
+    maxTurnsPerHalf: 20,
+    isGameOver: false,
 });
 
 describe('Resolution Logic', () => {
