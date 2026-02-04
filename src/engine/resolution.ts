@@ -1,12 +1,20 @@
 import type { MatchState, Command, Vector2, MatchPlayer } from './types';
-import { getBresenhamLine, arePositionsEqual } from './grid';
+import { getBresenhamLine, arePositionsEqual, isAdjacent } from './grid';
 
 type MoveMap = { [playerId: string]: { to: { x: number, y: number }, command: Command } };
 
 // --- Simulation Helpers ---
 
-const resolveTackle = (carrier: MatchPlayer, tackler: MatchPlayer): { winnerId: string } => {
-    return Math.random() < 0.5 ? { winnerId: carrier.id } : { winnerId: tackler.id };
+export interface TackleContext {
+    isSameTile: boolean;
+}
+
+export const resolveTackle = (carrier: MatchPlayer, tackler: MatchPlayer, context: TackleContext): { winnerId: string } => {
+    // Current requirement: 
+    // Same tile -> Defender advantage (70% win for tackler)
+    // Adjacent zone -> Attacker advantage (70% win for carrier)
+    const defenderWinChance = context.isSameTile ? 0.7 : 0.3;
+    return Math.random() < defenderWinChance ? { winnerId: tackler.id } : { winnerId: carrier.id };
 };
 
 const getPosAtTick = (path: Vector2[], t: number): Vector2 => path[t] || path[path.length - 1];
@@ -86,16 +94,16 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
             for (const p of players) {
                 if (p.id === ballCarrierId) continue;
 
-                const intercepted = arePositionsEqual(proposed[p.id], proposedBallPos) ||
-                    (arePositionsEqual(proposed[p.id], ballPos) && arePositionsEqual(proposedBallPos, p.position));
+                const isSameTile = arePositionsEqual(proposed[p.id], proposedBallPos);
+                const isZoneTackle = isAdjacent(proposed[p.id], proposedBallPos);
 
-                if (intercepted) {
-                    const interceptTile = arePositionsEqual(proposed[p.id], proposedBallPos) ? proposedBallPos : proposed[p.id];
+                if (isSameTile || isZoneTackle) {
+                    const interceptTile = proposedBallPos;
                     let ballWinnerId = p.id;
 
                     if (ballCarrierId) {
                         const carrier = players.find(c => c.id === ballCarrierId)!;
-                        const result = resolveTackle(carrier, p);
+                        const result = resolveTackle(carrier, p, { isSameTile });
                         ballWinnerId = result.winnerId;
                         carrier.hasBall = false;
                         carrier.currentHP = Math.max(0, carrier.currentHP - 1);

@@ -1,5 +1,5 @@
 import { expect, test, describe, vi } from 'vitest';
-import { resolveTurn } from './resolution';
+import { resolveTurn, resolveTackle } from './resolution';
 import type { MatchState } from './types';
 
 const createDummyState = (): MatchState => ({
@@ -67,29 +67,30 @@ describe('Resolution Logic', () => {
         expect(p2?.position).toEqual({ x: 4, y: 2 });
     });
 
-    test('Tackle Logic -> Randomness (Mocking Math.random)', () => {
-        const state = createDummyState();
-        // P1 at 2,2 moves to 4,2 with ball
-        // P2 is stationary at 4,2
-        state.players[0].hasBall = true;
+    test('Unit: resolveTackle Probability (Same Tile)', () => {
+        const carrier = { id: 'carrier' } as any;
+        const tackler = { id: 'tackler' } as any;
 
-        state.plannedCommands = [
-            { type: 'MOVE', payload: { playerId: 'p1', to: { x: 4, y: 2 } }, execute: () => ({ success: true }) }
-        ];
+        // Same Tile -> 70% Defender win chance
+        vi.spyOn(Math, 'random').mockReturnValue(0.69); // Defender wins
+        expect(resolveTackle(carrier, tackler, { isSameTile: true }).winnerId).toBe('tackler');
 
-        // Case 1: Carrier wins (Math.random < 0.5)
-        const mathSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
-        const state1 = resolveTurn(state);
-        expect(state1.players.find(p => p.id === 'p1')?.hasBall).toBe(true);
-        expect(state1.players.find(p => p.id === 'p2')?.hasBall).toBe(false);
+        vi.spyOn(Math, 'random').mockReturnValue(0.71); // Attacker wins
+        expect(resolveTackle(carrier, tackler, { isSameTile: true }).winnerId).toBe('carrier');
+        vi.restoreAllMocks();
+    });
 
-        // Case 2: Tackler wins (Math.random >= 0.5)
-        mathSpy.mockReturnValue(0.6);
-        const state2 = resolveTurn(state);
-        expect(state2.players.find(p => p.id === 'p1')?.hasBall).toBe(false);
-        expect(state2.players.find(p => p.id === 'p2')?.hasBall).toBe(true);
+    test('Unit: resolveTackle Probability (Adjacent Zone)', () => {
+        const carrier = { id: 'carrier' } as any;
+        const tackler = { id: 'tackler' } as any;
 
-        mathSpy.mockRestore();
+        // Adjacent -> 30% Defender win chance
+        vi.spyOn(Math, 'random').mockReturnValue(0.29); // Defender wins
+        expect(resolveTackle(carrier, tackler, { isSameTile: false }).winnerId).toBe('tackler');
+
+        vi.spyOn(Math, 'random').mockReturnValue(0.31); // Attacker wins
+        expect(resolveTackle(carrier, tackler, { isSameTile: false }).winnerId).toBe('carrier');
+        vi.restoreAllMocks();
     });
 
     test('Collision Type B: Head-on Swap -> Bounce Back', () => {
@@ -116,57 +117,84 @@ describe('Resolution Logic', () => {
         expect(p3?.position).toEqual({ x: 2, y: 2 });
     });
 
-    test('Move Through Opponent -> Should triggering Tackle', () => {
+    test('Move Through Opponent -> Should trigger Adjacent Tackle at Tick 1', () => {
         const state = createDummyState();
-        // P1 at 2,2 moves to 5,2
-        // P2 (AWAY) is at 4,2 (Stationary)
-        // Path is 2,2 -> 3,2 -> 4,2 -> 5,2
-
-        state.players = [
-            {
-                id: 'p1', sourcePlayerId: 's1', teamId: 'HOME', position: { x: 2, y: 2 },
-                facingDirection: 'E', currentHP: 100, modifiers: [], hasBall: true,
-                hasMovedThisTurn: false, hasActedThisTurn: false
-            },
-            {
-                id: 'p2', sourcePlayerId: 's2', teamId: 'AWAY', position: { x: 4, y: 2 },
-                facingDirection: 'W', currentHP: 100, modifiers: [], hasBall: false,
-                hasMovedThisTurn: false, hasActedThisTurn: false
-            }
-        ];
-
+        // P1 starts at (2,2), P2 at (4,2).
+        // P1 moves (2,2) -> (3,2). Path is [2,2, 3,2, 4,2, 5,2]
+        // AT TICK 1: P1 is at (3,2), P2 is at (4,2). ADJACENT!
+        state.players.find(p => p.id === 'p1')!.hasBall = true;
         state.plannedCommands = [
             { type: 'MOVE', payload: { playerId: 'p1', to: { x: 5, y: 2 } }, execute: () => ({ success: true }) }
         ];
 
-        vi.spyOn(Math, 'random').mockReturnValue(0.6); // Tackler wins
+        vi.spyOn(Math, 'random').mockReturnValue(0.1); // Adjacent -> 0.3 def win, 0.1 means DEFENDER wins
         const newState = resolveTurn(state);
         const p1 = newState.players.find(p => p.id === 'p1');
         const p2 = newState.players.find(p => p.id === 'p2');
 
-        // NEW BEHAVIOR: P1 LOST, so they stop at 3,2
-        // P2 (the winner) stays at 4,2
-        expect(p1?.position).toEqual({ x: 3, y: 2 });
-        expect(p2?.position).toEqual({ x: 4, y: 2 });
         expect(p2?.hasBall).toBe(true);
-        expect(p1?.hasBall).toBe(false);
+        expect(p1?.position).toEqual({ x: 2, y: 2 }); // Loser stops at prev pos
         vi.restoreAllMocks();
     });
 
-    test('Free Ball Interception -> Should Reach Destination (No Stop Short)', () => {
+    test('Tackle Zone: Intercept when adjacent', () => {
         const state = createDummyState();
-        // Ball at 5,2
-        state.ballPosition = { x: 5, y: 2 };
-        // P1 starts at 2,2 moves to 5,2 (destination)
+        // P1 moves (2,2) -> (3,2). P2 is at (4,2).
+        // At Tick 1: P1 is at (3,2), P2 is at (4,2). They are adjacent!
+        state.players.find(p => p.id === 'p1')!.hasBall = true;
         state.plannedCommands = [
-            { type: 'MOVE', payload: { playerId: 'p1', to: { x: 5, y: 2 } }, execute: () => ({ success: true }) }
+            { type: 'MOVE', payload: { playerId: 'p1', to: { x: 3, y: 2 } }, execute: () => ({ success: true }) }
         ];
+
+        // Adjacent tackle -> 30% defender win chance -> Math.random < 0.7 means carrier wins.
+        vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
         const newState = resolveTurn(state);
         const p1 = newState.players.find(p => p.id === 'p1');
 
-        expect(p1?.position).toEqual({ x: 5, y: 2 });
         expect(p1?.hasBall).toBe(true);
-        expect(newState.ballPosition).toEqual({ x: 5, y: 2 });
+        expect(p1?.position).toEqual({ x: 3, y: 2 });
+        vi.restoreAllMocks();
+    });
+
+    test('Advantage Logic: Same Tile (Defender Edge)', () => {
+        const state = createDummyState();
+        // P1 starts at (2,2), P2 at (4,2).
+        // P1 moves to (4,2). Tick 2: SAME TILE.
+        state.players.find(p => p.id === 'p1')!.hasBall = true;
+        state.plannedCommands = [
+            { type: 'MOVE', payload: { playerId: 'p1', to: { x: 4, y: 2 } }, execute: () => ({ success: true }) }
+        ];
+
+        // Same tile -> 70% defender win chance. Math.random < 0.3 means carrier wins.
+        // We want defender to win, so we return 0.5 (which is > 0.3)
+        vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+        const newState = resolveTurn(state);
+        const p1 = newState.players.find(p => p.id === 'p1');
+        const p2 = newState.players.find(p => p.id === 'p2');
+
+        expect(p2?.hasBall).toBe(true); // P2 wins
+        expect(p1?.hasBall).toBe(false);
+        vi.restoreAllMocks();
+    });
+
+    test('Advantage Logic: Adjacent Zone (Attacker Edge)', () => {
+        const state = createDummyState();
+        // P1 moves (2,2) -> (3,2). P2 is at (4,2). Adjacent.
+        state.players.find(p => p.id === 'p1')!.hasBall = true;
+        state.plannedCommands = [
+            { type: 'MOVE', payload: { playerId: 'p1', to: { x: 3, y: 2 } }, execute: () => ({ success: true }) }
+        ];
+
+        // Adjacent -> 30% defender win chance. Math.random < 0.7 means carrier wins.
+        // We return 0.5 (which is < 0.7), so carrier wins.
+        vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+        const newState = resolveTurn(state);
+        const p1 = newState.players.find(p => p.id === 'p1');
+
+        expect(p1?.hasBall).toBe(true);
+        vi.restoreAllMocks();
     });
 });

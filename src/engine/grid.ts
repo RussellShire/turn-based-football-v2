@@ -41,6 +41,13 @@ export const arePositionsEqual = (a: Vector2, b: Vector2): boolean => {
     return a.x === b.x && a.y === b.y;
 };
 
+export const isAdjacent = (a: Vector2, b: Vector2): boolean => {
+    const dx = Math.abs(a.x - b.x);
+    const dy = Math.abs(a.y - b.y);
+    // Chebyshev distance of 1 means they are adjacent or diagonal
+    return (dx === 1 && dy === 0) || (dx === 0 && dy === 1) || (dx === 1 && dy === 1);
+};
+
 export const getManhattanDistance = (a: Vector2, b: Vector2): number => {
     return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 };
