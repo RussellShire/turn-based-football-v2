@@ -3,6 +3,29 @@ import type { Vector2 } from './types';
 export const GRID_WIDTH = 24;
 export const GRID_HEIGHT = 16;
 
+export const GOAL_WIDTH_SIZE = 1; // 1 tile wide for the line
+export const GOAL_HEIGHT_SIZE = 4; // 4 tiles high
+export const GOAL_Y_START = Math.floor((GRID_HEIGHT - GOAL_HEIGHT_SIZE) / 2); // 6
+export const GOAL_Y_END = GOAL_Y_START + GOAL_HEIGHT_SIZE - 1; // 9
+
+export type TeamId = 'HOME' | 'AWAY';
+
+export const isGoalSpace = (pos: Vector2, scoringTeam: TeamId): boolean => {
+    // HOME scores in AWAY goal (x = 23)
+    // AWAY scores in HOME goal (x = 0)
+    const targetX = scoringTeam === 'HOME' ? GRID_WIDTH - 1 : 0;
+    return (
+        pos.x === targetX &&
+        pos.y >= GOAL_Y_START &&
+        pos.y <= GOAL_Y_END
+    );
+};
+
+export const isInsideGoal = (pos: Vector2): boolean => {
+    return (pos.x === 0 || pos.x === GRID_WIDTH - 1) &&
+        (pos.y >= GOAL_Y_START && pos.y <= GOAL_Y_END);
+};
+
 export const isValidTile = (pos: Vector2): boolean => {
     return (
         Number.isInteger(pos.x) &&
