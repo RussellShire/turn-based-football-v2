@@ -27,7 +27,18 @@ Code style: Focus on performance, React and Typescript best practices and code r
 - Player Cards & Stamina Bars: Mapping the MatchPlayer stats to visual components.
 - Power Ups/Special Moves: Visual triggers for the logic built in Phase 2.
 
-### Phase 4: The Meta-Game (Persistence)
+### Phase 4: Upgrade UI Visuals
+
+- Improve the look of players to include
+- Add lines to the pitch
+- Add visual illustrations when ball is kicked
+- Add visual illustrations when player tackles
+- Add visual illustrations when player scores
+- Add visual illustrations when player is tackled
+
+### Phase 5: The Meta-Game (Persistence)
 
 - Persistent Teams: Moving player data from a local match to a "Club" database.
 - Trading & Injuries: Logic for modifying the PersistentPlayer interface.
+
+
