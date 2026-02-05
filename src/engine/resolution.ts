@@ -10,6 +10,7 @@ export interface TackleContext {
 }
 
 export const resolveTackle = (carrier: MatchPlayer, tackler: MatchPlayer, context: TackleContext): { winnerId: string } => {
+    console.log('resolveTackle', carrier, tackler, context);
     // Stat Influence:
     // Tackling Skill -> strength
     // Dribbling Skill -> technique
@@ -30,6 +31,31 @@ export const resolveTackle = (carrier: MatchPlayer, tackler: MatchPlayer, contex
 };
 
 const getPosAtTick = (path: Vector2[], t: number): Vector2 => path[t] || path[path.length - 1];
+
+const getPushBackPosition = (
+    loser: MatchPlayer,
+    players: MatchPlayer[],
+    gridSize: { width: number; height: number }
+): Vector2 => {
+    // Push back direction: towards own goal
+    const pushDir = loser.teamId === 'HOME' ? -1 : 1;
+    const candidates = [
+        { x: loser.position.x + pushDir, y: loser.position.y },          // Straight back
+        { x: loser.position.x + pushDir, y: loser.position.y + 1 },      // Diagonal back-up
+        { x: loser.position.x + pushDir, y: loser.position.y - 1 }       // Diagonal back-down
+    ];
+
+    for (const cand of candidates) {
+        // Bounds check
+        if (cand.x < 0 || cand.x >= gridSize.width || cand.y < 0 || cand.y >= gridSize.height) continue;
+
+        // Occupancy check
+        const isOccupied = players.some(p => p.id !== loser.id && arePositionsEqual(p.position, cand));
+        if (!isOccupied) return cand;
+    }
+
+    return loser.position; // Stumble - no room to push back
+};
 
 const getFinalOccupantsMap = (players: MatchPlayer[], moves: MoveMap): Record<string, string> => {
     const map: Record<string, string> = {};
@@ -156,6 +182,13 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
 
                     isStopped[p.id] = true;
                     const winner = players.find(w => w.id === ballWinnerId)!;
+
+                    // TACKLE PUSH-BACK: 
+                    // Only push back the BALL CARRIER if they lose the tackle.
+                    // This creates space for the winner and acts as a penalty for losing possession.
+                    if (carrier && ballWinnerId !== carrier.id) {
+                        carrier.position = getPushBackPosition(carrier, players, initialState.gridSize);
+                    }
 
                     // Winner takes tile only if free or they already claimed it
                     const key = `${interceptTile.x},${interceptTile.y}`;
