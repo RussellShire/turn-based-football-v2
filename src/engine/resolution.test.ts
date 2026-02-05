@@ -155,7 +155,7 @@ describe('Resolution Logic', () => {
         const p2 = newState.players.find(p => p.id === 'p2');
 
         expect(p2?.hasBall).toBe(true);
-        expect(p1?.position).toEqual({ x: 2, y: 2 }); // Loser stops at prev pos
+        expect(p1?.position).toEqual({ x: 3, y: 2 }); // Intercepted at (3,2)
         vi.restoreAllMocks();
     });
 
@@ -231,24 +231,17 @@ describe('Resolution Logic', () => {
         state.plannedCommands = [
             { type: 'KICK', payload: { playerId: 'p1', to: { x: 23, y: 7 } }, execute: () => ({ success: true }) }
         ];
-
         const newState = resolveTurn(state);
-
         expect(newState.score.HOME).toBe(1);
         expect(newState.score.AWAY).toBe(0);
 
-        // Possession should have swapped to AWAY
+        // Final positions (not yet reset)
         const p1 = newState.players.find(p => p.id === 'p1');
-        const p2 = newState.players.find(p => p.id === 'p2');
-        expect(p1?.hasBall).toBe(false);
-        expect(p2?.hasBall).toBe(true);
-
-        // Players should be at kickoff positions
-        expect(p1?.position.x).toBe(8); // HOME defending
-        expect(p2?.position.x).toBe(12); // AWAY possessing (center line for AWAY)
+        expect(p1?.position.x).toBe(22);
+        expect(newState.ballPosition.x).toBe(23); // In goal
     });
 
-    test('Goal Scoring: AWAY team scores (DRIBBLE) -> Reset State', () => {
+    test('Goal Scoring: AWAY team scores (DRIBBLE) -> Deferred Reset', () => {
         const state = createDummyState();
         state.gridSize = { width: 24, height: 16 };
         state.ballPosition = { x: 1, y: 7 }; // One away from HOME goal (x=0)
@@ -264,15 +257,10 @@ describe('Resolution Logic', () => {
         expect(newState.score.AWAY).toBe(1);
         expect(newState.score.HOME).toBe(0);
 
-        // Possession should have swapped to HOME
-        const p1 = newState.players.find(p => p.id === 'p1');
+        // Final positions (not yet reset)
         const p2 = newState.players.find(p => p.id === 'p2');
-        expect(p1?.hasBall).toBe(true);
-        expect(p2?.hasBall).toBe(false);
-
-        // Players should be at kickoff positions
-        expect(p1?.position.x).toBe(11); // HOME possessing
-        expect(p2?.position.x).toBe(15); // AWAY defending
+        expect(p2?.position.x).toBe(0); // Dribbled into goal
+        expect(newState.ballPosition.x).toBe(0); // In goal
     });
 
     test('Bug Fix: Teammates should not tackle each other during move', () => {

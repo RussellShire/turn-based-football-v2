@@ -91,6 +91,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
             const resolvedState = resolveTurn(planningState);
 
             // Set to RESOLUTION phase first
+            const goalScored = (resolvedState.score.HOME > state.score.HOME) || (resolvedState.score.AWAY > state.score.AWAY);
+
             set({
                 ...resolvedState,
                 phase: 'RESOLUTION',
@@ -98,11 +100,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
             });
 
             // Automatically transition to next state after animation delay
+            // Longer delay if a goal was scored to let the ball sit in the goal
+            const delay = goalScored ? 2500 : 1000;
+
             setTimeout(() => {
                 set((s) => {
                     let nextTurn = s.turn + 1;
                     let nextHalf = s.currentHalf;
                     let gameOver = false;
+                    let nextPlayers = s.players;
+                    let nextBallPos = s.ballPosition;
+
+                    if (goalScored) {
+                        // Reset positions for kick-off
+                        const scoringTeam = (resolvedState.score.HOME > state.score.HOME) ? 'HOME' : 'AWAY';
+                        const kickoffTeam = scoringTeam === 'HOME' ? 'AWAY' : 'HOME';
+                        const resetState = getKickOffState(s.players, kickoffTeam);
+                        nextPlayers = resetState.players;
+                        nextBallPos = resetState.ballPosition;
+                    }
 
                     if (nextTurn > s.maxTurnsPerHalf) {
                         if (s.currentHalf === 1) {
@@ -110,7 +126,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
                             nextTurn = 1;
                         } else {
                             gameOver = true;
-                            // Keep final turn count or set back to max
                         }
                     }
 
@@ -121,9 +136,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
                         isGameOver: gameOver,
                         phase: 'PLANNING',
                         activeTeam: 'HOME',
+                        players: nextPlayers,
+                        ballPosition: nextBallPos,
                     };
                 });
-            }, 1000); // 1s animation duration
+            }, delay);
         }
     }
 }));

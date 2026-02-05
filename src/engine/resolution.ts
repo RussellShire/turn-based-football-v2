@@ -1,6 +1,5 @@
-import type { MatchState, Command, Vector2, MatchPlayer, TeamId } from './types';
+import type { MatchState, Command, Vector2, MatchPlayer } from './types';
 import { getBresenhamLine, arePositionsEqual, isAdjacent, isGoalSpace } from './grid';
-import { getKickOffState } from './formation';
 
 type MoveMap = { [playerId: string]: { to: { x: number, y: number }, command: Command } };
 
@@ -53,7 +52,6 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
     let ballCarrierId = players.find(p => p.hasBall)?.id || null;
     const finalOccupants = getFinalOccupantsMap(players, moves);
 
-    let scoringTeam: TeamId | null = null;
     let score = { ...initialState.score };
 
     // 2. Path Calculation
@@ -105,18 +103,18 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
             ? (ballCarrierId && !isStopped[ballCarrierId] ? proposed[ballCarrierId] : getPosAtTick(ballPath, t))
             : ballPos;
 
+        // Apply movement for this tick
+        players.forEach(p => { if (!isStopped[p.id]) p.position = proposed[p.id]; });
+        if (!isBallStopped) ballPos = proposedBallPos;
+
         // GOAL DETECTION
         if (!isBallStopped) {
-            if (isGoalSpace(proposedBallPos, 'HOME')) {
-                scoringTeam = 'HOME';
+            if (isGoalSpace(ballPos, 'HOME')) {
                 score.HOME++;
-                ballPos = proposedBallPos;
                 isBallStopped = true;
                 break;
-            } else if (isGoalSpace(proposedBallPos, 'AWAY')) {
-                scoringTeam = 'AWAY';
+            } else if (isGoalSpace(ballPos, 'AWAY')) {
                 score.AWAY++;
-                ballPos = proposedBallPos;
                 isBallStopped = true;
                 break;
             }
@@ -132,8 +130,8 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
             for (const p of players) {
                 if (p.id === ballCarrierId) continue;
 
-                const isSameTile = arePositionsEqual(proposed[p.id], proposedBallPos);
-                const isZoneTackle = isAdjacent(proposed[p.id], proposedBallPos);
+                const isSameTile = arePositionsEqual(p.position, ballPos);
+                const isZoneTackle = isAdjacent(p.position, ballPos);
 
                 // TRIGGER RULES:
                 // 1. Same Tile: Transitions possession (Tackle or Catch). 
@@ -145,7 +143,7 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
                     : (isSameTile && !carrier);
 
                 if (isTriggered) {
-                    const interceptTile = proposedBallPos;
+                    const interceptTile = ballPos;
                     let ballWinnerId = p.id;
 
                     if (carrier) {
@@ -179,17 +177,6 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
                 }
             }
         }
-
-        // Apply movement for this tick
-        players.forEach(p => { if (!isStopped[p.id]) p.position = proposed[p.id]; });
-        if (!isBallStopped) ballPos = proposedBallPos;
-    }
-
-    if (scoringTeam) {
-        // RESET STATE ON GOAL
-        const kickoffTeam = scoringTeam === 'HOME' ? 'AWAY' : 'HOME';
-        const resetState = getKickOffState(players, kickoffTeam);
-        return finalizeState(initialState, resetState.players, resetState.ballPosition, score);
     }
 
     return finalizeState(initialState, players, ballPos, score);
