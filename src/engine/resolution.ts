@@ -1,5 +1,6 @@
-import type { MatchState, Command, Vector2, MatchPlayer } from './types';
-import { getBresenhamLine, arePositionsEqual, isAdjacent } from './grid';
+import type { MatchState, Command, Vector2, MatchPlayer, TeamId } from './types';
+import { getBresenhamLine, arePositionsEqual, isAdjacent, isGoalSpace } from './grid';
+import { getKickOffState } from './formation';
 
 type MoveMap = { [playerId: string]: { to: { x: number, y: number }, command: Command } };
 
@@ -10,11 +11,23 @@ export interface TackleContext {
 }
 
 export const resolveTackle = (carrier: MatchPlayer, tackler: MatchPlayer, context: TackleContext): { winnerId: string } => {
-    // Current requirement: 
-    // Same tile -> Defender advantage (70% win for tackler)
-    // Adjacent zone -> Attacker advantage (70% win for carrier)
-    const defenderWinChance = context.isSameTile ? 0.7 : 0.3;
-    return Math.random() < defenderWinChance ? { winnerId: tackler.id } : { winnerId: carrier.id };
+    // Stat Influence:
+    // Tackling Skill -> strength
+    // Dribbling Skill -> technique
+
+    // Base win chance (0.5 if stats are equal)
+    // Every 10 points difference changes the balance by 10%
+    const baseWinChance = 0.5 + (tackler.attributes.strength - carrier.attributes.technique) / 100;
+
+    // Situational context bonus/penalty
+    // Same tile -> Defender (tackler) advantage
+    // Adjacent zone -> Attacker (carrier) advantage
+    const situationalBonus = context.isSameTile ? 0.2 : -0.2;
+
+    // Clamp to [0.1, 0.9] to maintain some randomness
+    const finalDefenderWinChance = Math.min(Math.max(baseWinChance + situationalBonus, 0.1), 0.9);
+
+    return Math.random() < finalDefenderWinChance ? { winnerId: tackler.id } : { winnerId: carrier.id };
 };
 
 const getPosAtTick = (path: Vector2[], t: number): Vector2 => path[t] || path[path.length - 1];
@@ -39,6 +52,9 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
     let ballPos = { ...initialState.ballPosition };
     let ballCarrierId = players.find(p => p.hasBall)?.id || null;
     const finalOccupants = getFinalOccupantsMap(players, moves);
+
+    let scoringTeam: TeamId | null = null;
+    let score = { ...initialState.score };
 
     // 2. Path Calculation
     const playerPaths: Record<string, Vector2[]> = {};
@@ -89,20 +105,50 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
             ? (ballCarrierId && !isStopped[ballCarrierId] ? proposed[ballCarrierId] : getPosAtTick(ballPath, t))
             : ballPos;
 
+        // GOAL DETECTION
+        if (!isBallStopped) {
+            if (isGoalSpace(proposedBallPos, 'HOME')) {
+                scoringTeam = 'HOME';
+                score.HOME++;
+                ballPos = proposedBallPos;
+                isBallStopped = true;
+                break;
+            } else if (isGoalSpace(proposedBallPos, 'AWAY')) {
+                scoringTeam = 'AWAY';
+                score.AWAY++;
+                ballPos = proposedBallPos;
+                isBallStopped = true;
+                break;
+            }
+        }
+
         // INTERCEPTIONS & TACKLES
         if (!isBallStopped) {
+            const carrier = ballCarrierId ? players.find(c => c.id === ballCarrierId) : null;
+            // For loose balls, we consider the team who was active during planning as the "owner" 
+            // to determine who is an "opponent" for zone interceptions.
+            const ownerTeam = carrier ? carrier.teamId : initialState.activeTeam;
+
             for (const p of players) {
                 if (p.id === ballCarrierId) continue;
 
                 const isSameTile = arePositionsEqual(proposed[p.id], proposedBallPos);
                 const isZoneTackle = isAdjacent(proposed[p.id], proposedBallPos);
 
-                if (isSameTile || isZoneTackle) {
+                // TRIGGER RULES:
+                // 1. Same Tile: Transitions possession (Tackle or Catch). 
+                //    Teammates only trigger on same tile if the ball is LOOSE (catching a pass).
+                // 2. Zone (Adjacent): Only triggers for OPPONENTS (Tackling or Intercepting).
+                const isOpponent = p.teamId !== ownerTeam;
+                const isTriggered = isOpponent
+                    ? (isSameTile || isZoneTackle)
+                    : (isSameTile && !carrier);
+
+                if (isTriggered) {
                     const interceptTile = proposedBallPos;
                     let ballWinnerId = p.id;
 
-                    if (ballCarrierId) {
-                        const carrier = players.find(c => c.id === ballCarrierId)!;
+                    if (carrier) {
                         const result = resolveTackle(carrier, p, { isSameTile });
                         ballWinnerId = result.winnerId;
                         carrier.hasBall = false;
@@ -139,12 +185,19 @@ export const resolveTurn = (initialState: MatchState): MatchState => {
         if (!isBallStopped) ballPos = proposedBallPos;
     }
 
-    return finalizeState(initialState, players, ballPos);
+    if (scoringTeam) {
+        // RESET STATE ON GOAL
+        const kickoffTeam = scoringTeam === 'HOME' ? 'AWAY' : 'HOME';
+        const resetState = getKickOffState(players, kickoffTeam);
+        return finalizeState(initialState, resetState.players, resetState.ballPosition, score);
+    }
+
+    return finalizeState(initialState, players, ballPos, score);
 };
 
 // --- State Finalization ---
 
-const finalizeState = (initial: MatchState, players: MatchPlayer[], ballPos: Vector2): MatchState => {
+const finalizeState = (initial: MatchState, players: MatchPlayer[], ballPos: Vector2, score: { HOME: number; AWAY: number }): MatchState => {
     const finalPlayers = players.map(p => {
         const initialP = initial.players.find(ip => ip.id === p.id);
         const moved = initialP && !arePositionsEqual(p.position, initialP.position);
@@ -160,6 +213,7 @@ const finalizeState = (initial: MatchState, players: MatchPlayer[], ballPos: Vec
         ...initial,
         players: finalPlayers,
         ballPosition: ballPos,
+        score: score,
         plannedCommands: [],
         phase: 'PLANNING'
     };

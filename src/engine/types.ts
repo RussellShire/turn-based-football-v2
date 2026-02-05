@@ -38,6 +38,13 @@ export interface MatchPlayer {
     currentHP: number; // Stamina
     modifiers: StatModifier[];
 
+    attributes: {
+        speed: number;
+        technique: number;
+        strength: number;
+        intelligence: number;
+    };
+
     teamId: TeamId;
 
     hasBall: boolean;
@@ -61,6 +68,7 @@ export interface MatchState {
     turn: number;
     phase: 'PLANNING' | 'EXECUTION' | 'RESOLUTION';
     activeTeam: TeamId;
+    score: { HOME: number; AWAY: number };
 
     players: MatchPlayer[];
     ballPosition: Vector2;

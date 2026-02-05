@@ -9,12 +9,12 @@ function App() {
   useEffect(() => {
     // Initialize with dummy data
     const home: MatchPlayer[] = [
-      { id: 'h1', sourcePlayerId: 'p1', position: { x: 5, y: 8 }, facingDirection: 'E', teamId: 'HOME', currentHP: 100, modifiers: [], hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
-      { id: 'h2', sourcePlayerId: 'p2', position: { x: 8, y: 5 }, facingDirection: 'E', teamId: 'HOME', currentHP: 100, modifiers: [], hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
+      { id: 'h1', sourcePlayerId: 'p1', position: { x: 5, y: 8 }, facingDirection: 'E', teamId: 'HOME', currentHP: 100, modifiers: [], attributes: { speed: 80, technique: 70, strength: 60, intelligence: 75 }, hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
+      { id: 'h2', sourcePlayerId: 'p2', position: { x: 8, y: 5 }, facingDirection: 'E', teamId: 'HOME', currentHP: 100, modifiers: [], attributes: { speed: 70, technique: 85, strength: 50, intelligence: 80 }, hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
     ];
     const away: MatchPlayer[] = [
-      { id: 'a1', sourcePlayerId: 'p3', position: { x: 18, y: 8 }, facingDirection: 'W', teamId: 'AWAY', currentHP: 100, modifiers: [], hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
-      { id: 'a2', sourcePlayerId: 'p4', position: { x: 18, y: 5 }, facingDirection: 'W', teamId: 'AWAY', currentHP: 100, modifiers: [], hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
+      { id: 'a1', sourcePlayerId: 'p3', position: { x: 18, y: 8 }, facingDirection: 'W', teamId: 'AWAY', currentHP: 100, modifiers: [], attributes: { speed: 65, technique: 60, strength: 85, intelligence: 70 }, hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
+      { id: 'a2', sourcePlayerId: 'p4', position: { x: 18, y: 5 }, facingDirection: 'W', teamId: 'AWAY', currentHP: 100, modifiers: [], attributes: { speed: 75, technique: 65, strength: 70, intelligence: 75 }, hasBall: false, hasMovedThisTurn: false, hasActedThisTurn: false },
     ];
 
     initializeMatch(home, away);

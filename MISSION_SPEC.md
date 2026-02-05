@@ -10,14 +10,14 @@ Code style: Focus on performance, React and Typescript best practices and code r
 
 ### Phase 1: The Match "World" (Foundation)
 
-- Goal Space & Grid: Defining the coordinates that represent "Goal" vs. "Field."
-- Turn Logic: Implementing the counter for halves and full time.
-- The Tackle Zone: A logic-only function that calculates distance between players.
-- Stats Influence: Creating the math formula: $Chance = (Strength \times Stamina) + Random$.
+~~- Goal Space & Grid: Defining the coordinates that represent "Goal" vs. "Field."~~
+~~- Turn Logic: Implementing the counter for halves and full time.~~
+~~- The Tackle Zone: A logic-only function that calculates distance between players.~~
+~~- Stats Influence: Creating the math formula: tackling skill vs dribbling skill with some randomness~~
 
 ### Phase 2: The Action & Resolution (The "Meat")
 
-- Tackle Success: Using the stats from Phase 1 to decide who keeps the ball.
+~~- Tackle Success: Using the stats from Phase 1 to decide who keeps the ball.~~
 - Score Tracking: Updating the game state when the ball enters the Goal Space.
 - Stat Leveling (Logic): Detecting a "Success" and incrementing a number in the player's data.
 

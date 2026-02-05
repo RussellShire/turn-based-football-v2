@@ -6,18 +6,19 @@ const createDummyState = (): MatchState => ({
     turn: 1,
     phase: 'PLANNING',
     activeTeam: 'HOME',
+    score: { HOME: 0, AWAY: 0 },
     gridSize: { width: 10, height: 10 },
     ballPosition: { x: 5, y: 5 },
     plannedCommands: [],
     players: [
         {
             id: 'p1', sourcePlayerId: 's1', teamId: 'HOME', position: { x: 2, y: 2 },
-            facingDirection: 'E', currentHP: 100, modifiers: [], hasBall: false,
+            facingDirection: 'E', currentHP: 100, modifiers: [], attributes: { speed: 50, technique: 50, strength: 50, intelligence: 50 }, hasBall: false,
             hasMovedThisTurn: false, hasActedThisTurn: false
         },
         {
             id: 'p2', sourcePlayerId: 's2', teamId: 'AWAY', position: { x: 4, y: 2 },
-            facingDirection: 'W', currentHP: 100, modifiers: [], hasBall: false,
+            facingDirection: 'W', currentHP: 100, modifiers: [], attributes: { speed: 50, technique: 50, strength: 50, intelligence: 50 }, hasBall: false,
             hasMovedThisTurn: false, hasActedThisTurn: false
         }
     ],
@@ -67,11 +68,12 @@ describe('Resolution Logic', () => {
         expect(p2?.position).toEqual({ x: 4, y: 2 });
     });
 
-    test('Unit: resolveTackle Probability (Same Tile)', () => {
-        const carrier = { id: 'carrier' } as any;
-        const tackler = { id: 'tackler' } as any;
+    test('Unit: resolveTackle Probability (Same Tile, Equal Stats)', () => {
+        const attributes = { speed: 50, technique: 50, strength: 50, intelligence: 50 };
+        const carrier = { id: 'carrier', attributes } as any;
+        const tackler = { id: 'tackler', attributes } as any;
 
-        // Same Tile -> 70% Defender win chance
+        // Equal Stats (50/50 base) + Same Tile (0.2 bonus) = 70% Defender win chance
         vi.spyOn(Math, 'random').mockReturnValue(0.69); // Defender wins
         expect(resolveTackle(carrier, tackler, { isSameTile: true }).winnerId).toBe('tackler');
 
@@ -80,16 +82,36 @@ describe('Resolution Logic', () => {
         vi.restoreAllMocks();
     });
 
-    test('Unit: resolveTackle Probability (Adjacent Zone)', () => {
-        const carrier = { id: 'carrier' } as any;
-        const tackler = { id: 'tackler' } as any;
+    test('Unit: resolveTackle Probability (Adjacent Zone, Equal Stats)', () => {
+        const attributes = { speed: 50, technique: 50, strength: 50, intelligence: 50 };
+        const carrier = { id: 'carrier', attributes } as any;
+        const tackler = { id: 'tackler', attributes } as any;
 
-        // Adjacent -> 30% Defender win chance
+        // Equal Stats (50/50 base) + Adjacent (-0.2 penalty) = 30% Defender win chance
         vi.spyOn(Math, 'random').mockReturnValue(0.29); // Defender wins
         expect(resolveTackle(carrier, tackler, { isSameTile: false }).winnerId).toBe('tackler');
 
         vi.spyOn(Math, 'random').mockReturnValue(0.31); // Attacker wins
         expect(resolveTackle(carrier, tackler, { isSameTile: false }).winnerId).toBe('carrier');
+        vi.restoreAllMocks();
+    });
+
+    test('Unit: resolveTackle Probability (Stats Difference)', () => {
+        const carrier = { id: 'carrier', attributes: { technique: 30, strength: 50, speed: 50, intelligence: 50 } } as any;
+        const tackler = { id: 'tackler', attributes: { technique: 50, strength: 70, speed: 50, intelligence: 50 } } as any;
+
+        // Base Win Chance = 0.5 + (70 - 30) / 100 = 0.9
+        // Same Tile (+0.2) = 1.1 -> Clamped to 0.9
+        vi.spyOn(Math, 'random').mockReturnValue(0.89);
+        expect(resolveTackle(carrier, tackler, { isSameTile: true }).winnerId).toBe('tackler');
+
+        // Adjacent (-0.2) = 0.7
+        vi.spyOn(Math, 'random').mockReturnValue(0.69);
+        expect(resolveTackle(carrier, tackler, { isSameTile: false }).winnerId).toBe('tackler');
+
+        vi.spyOn(Math, 'random').mockReturnValue(0.71);
+        expect(resolveTackle(carrier, tackler, { isSameTile: false }).winnerId).toBe('carrier');
+
         vi.restoreAllMocks();
     });
 
@@ -99,7 +121,7 @@ describe('Resolution Logic', () => {
         // P3 at 3,2 moves to 2,2 (where P1 is)
         state.players.push({
             id: 'p3', sourcePlayerId: 's3', teamId: 'AWAY', position: { x: 3, y: 2 },
-            facingDirection: 'W', currentHP: 100, modifiers: [], hasBall: false,
+            facingDirection: 'W', currentHP: 100, modifiers: [], attributes: { speed: 50, technique: 50, strength: 50, intelligence: 50 }, hasBall: false,
             hasMovedThisTurn: false, hasActedThisTurn: false
         });
 
@@ -159,16 +181,17 @@ describe('Resolution Logic', () => {
 
     test('Advantage Logic: Same Tile (Defender Edge)', () => {
         const state = createDummyState();
+        // Set stats to 50/50
+        // Same tile -> 70% defender win chance. Math.random < 0.7 means defender wins.
+        // We return 0.1 (which is < 0.7), so defender wins.
+        vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
         // P1 starts at (2,2), P2 at (4,2).
         // P1 moves to (4,2). Tick 2: SAME TILE.
         state.players.find(p => p.id === 'p1')!.hasBall = true;
         state.plannedCommands = [
             { type: 'MOVE', payload: { playerId: 'p1', to: { x: 4, y: 2 } }, execute: () => ({ success: true }) }
         ];
-
-        // Same tile -> 70% defender win chance. Math.random < 0.3 means carrier wins.
-        // We want defender to win, so we return 0.5 (which is > 0.3)
-        vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
         const newState = resolveTurn(state);
         const p1 = newState.players.find(p => p.id === 'p1');
@@ -196,5 +219,138 @@ describe('Resolution Logic', () => {
 
         expect(p1?.hasBall).toBe(true);
         vi.restoreAllMocks();
+    });
+
+    test('Goal Scoring: HOME team scores (KICK) -> Reset State', () => {
+        const state = createDummyState();
+        state.gridSize = { width: 24, height: 16 };
+        state.ballPosition = { x: 22, y: 7 }; // One away from AWAY goal (x=23, y=6-9)
+        state.players[0].hasBall = true;
+        state.players[0].position = { x: 22, y: 7 };
+
+        state.plannedCommands = [
+            { type: 'KICK', payload: { playerId: 'p1', to: { x: 23, y: 7 } }, execute: () => ({ success: true }) }
+        ];
+
+        const newState = resolveTurn(state);
+
+        expect(newState.score.HOME).toBe(1);
+        expect(newState.score.AWAY).toBe(0);
+
+        // Possession should have swapped to AWAY
+        const p1 = newState.players.find(p => p.id === 'p1');
+        const p2 = newState.players.find(p => p.id === 'p2');
+        expect(p1?.hasBall).toBe(false);
+        expect(p2?.hasBall).toBe(true);
+
+        // Players should be at kickoff positions
+        expect(p1?.position.x).toBe(8); // HOME defending
+        expect(p2?.position.x).toBe(12); // AWAY possessing (center line for AWAY)
+    });
+
+    test('Goal Scoring: AWAY team scores (DRIBBLE) -> Reset State', () => {
+        const state = createDummyState();
+        state.gridSize = { width: 24, height: 16 };
+        state.ballPosition = { x: 1, y: 7 }; // One away from HOME goal (x=0)
+        state.players[1].position = { x: 1, y: 7 }; // P2 is AWAY
+        state.players[1].hasBall = true;
+
+        state.plannedCommands = [
+            { type: 'MOVE', payload: { playerId: 'p2', to: { x: 0, y: 7 } }, execute: () => ({ success: true }) }
+        ];
+
+        const newState = resolveTurn(state);
+
+        expect(newState.score.AWAY).toBe(1);
+        expect(newState.score.HOME).toBe(0);
+
+        // Possession should have swapped to HOME
+        const p1 = newState.players.find(p => p.id === 'p1');
+        const p2 = newState.players.find(p => p.id === 'p2');
+        expect(p1?.hasBall).toBe(true);
+        expect(p2?.hasBall).toBe(false);
+
+        // Players should be at kickoff positions
+        expect(p1?.position.x).toBe(11); // HOME possessing
+        expect(p2?.position.x).toBe(15); // AWAY defending
+    });
+
+    test('Bug Fix: Teammates should not tackle each other during move', () => {
+        const state = createDummyState();
+        // Remove p2 to avoid accidental AWAY tackle
+        state.players = state.players.filter(p => p.id !== 'p2');
+
+        // P1 has ball, P3 is teammate nearby (at 3,2).
+        state.players.push({
+            id: 'p3', sourcePlayerId: 's3', teamId: 'HOME', position: { x: 3, y: 2 },
+            facingDirection: 'E', currentHP: 100, modifiers: [], attributes: { speed: 50, technique: 50, strength: 50, intelligence: 50 }, hasBall: false,
+            hasMovedThisTurn: false, hasActedThisTurn: false
+        });
+
+        state.players.find(p => p.id === 'p1')!.hasBall = true;
+        state.plannedCommands = [
+            { type: 'MOVE', payload: { playerId: 'p1', to: { x: 5, y: 2 } }, execute: () => ({ success: true }) }
+        ];
+
+        const newState = resolveTurn(state);
+        const p1 = newState.players.find(p => p.id === 'p1');
+
+        // P1 should reach destination (5,2) and not be stopped by P3 (3,2)
+        expect(p1?.position).toEqual({ x: 5, y: 2 });
+        expect(p1?.hasBall).toBe(true);
+    });
+
+    test('Bug Fix: Teammates CAN catch a loose ball on same tile', () => {
+        const state = createDummyState();
+        state.players = state.players.filter(p => p.id !== 'p2'); // Remove AWAY player
+
+        // P3 (HOME) is at (3,2).
+        state.players.push({
+            id: 'p3', sourcePlayerId: 's3', teamId: 'HOME', position: { x: 3, y: 2 },
+            facingDirection: 'E', currentHP: 100, modifiers: [], attributes: { speed: 50, technique: 50, strength: 50, intelligence: 50 }, hasBall: false,
+            hasMovedThisTurn: false, hasActedThisTurn: false
+        });
+
+        // Ball is at (2,2) and is KICKED to (4,2). Tick 1: Ball is at (3,2).
+        state.ballPosition = { x: 2, y: 2 };
+        state.activeTeam = 'HOME';
+        state.plannedCommands = [
+            { type: 'KICK', payload: { playerId: 'p1', to: { x: 4, y: 2 } }, execute: () => ({ success: true }) }
+        ];
+
+        const newState = resolveTurn(state);
+        const p3 = newState.players.find(p => p.id === 'p3');
+
+        // P3 should catch the ball at (3,2)
+        expect(p3?.position).toEqual({ x: 3, y: 2 });
+        expect(p3?.hasBall).toBe(true);
+        expect(newState.ballPosition).toEqual({ x: 3, y: 2 });
+    });
+
+    test('Bug Fix: Teammates do NOT intercept loose ball via zone', () => {
+        const state = createDummyState();
+        state.players = state.players.filter(p => p.id !== 'p2');
+
+        // P3 (HOME) is at (3,3). 
+        state.players.push({
+            id: 'p3', sourcePlayerId: 's3', teamId: 'HOME', position: { x: 3, y: 3 },
+            facingDirection: 'E', currentHP: 100, modifiers: [], attributes: { speed: 50, technique: 50, strength: 50, intelligence: 50 }, hasBall: false,
+            hasMovedThisTurn: false, hasActedThisTurn: false
+        });
+
+        // Ball is KICKED from (2,2) to (4,2). Tick 1: Ball is at (3,2).
+        // (3,3) is ADJACENT to (3,2).
+        state.ballPosition = { x: 2, y: 2 };
+        state.activeTeam = 'HOME';
+        state.plannedCommands = [
+            { type: 'KICK', payload: { playerId: 'p1', to: { x: 4, y: 2 } }, execute: () => ({ success: true }) }
+        ];
+
+        const newState = resolveTurn(state);
+        const p3 = newState.players.find(p => p.id === 'p3');
+
+        // P3 should NOT catch it because they are only adjacent, not on same tile.
+        expect(p3?.hasBall).toBe(false);
+        expect(newState.ballPosition).toEqual({ x: 4, y: 2 }); // Ball reaches destination
     });
 });

@@ -5,6 +5,7 @@ import { executeCommand } from './engine/processor';
 import type { Command, CommandResult } from './engine/types';
 import { generateAIPlans } from './engine/ai';
 import { resolveTurn } from './engine/resolution';
+import { getKickOffState } from './engine/formation';
 
 interface GameStore extends MatchState {
     // Actions
@@ -21,6 +22,7 @@ const INITIAL_STATE: Omit<MatchState, 'activeTeam' | 'players' | 'ballPosition'>
     currentHalf: 1,
     maxTurnsPerHalf: 10,
     isGameOver: false,
+    score: { HOME: 0, AWAY: 0 },
 };
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -29,11 +31,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
     players: [],
     ballPosition: { x: 12, y: 8 }, // Center
 
-    initializeMatch: (homePlayers, awayPlayers) => set({
-        ...INITIAL_STATE,
-        players: [...homePlayers, ...awayPlayers],
-        ballPosition: { x: Math.floor(GRID_WIDTH / 2), y: Math.floor(GRID_HEIGHT / 2) },
-    }),
+    initializeMatch: (homePlayers, awayPlayers) => {
+        const { players: initialPlayers, ballPosition } = getKickOffState(
+            [...homePlayers, ...awayPlayers],
+            'HOME'
+        );
+        set({
+            ...INITIAL_STATE,
+            players: initialPlayers,
+            ballPosition,
+            activeTeam: 'HOME'
+        });
+    },
 
     dispatch: (command) => {
         const state = get();
